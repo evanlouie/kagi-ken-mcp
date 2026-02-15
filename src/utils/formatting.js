@@ -30,8 +30,9 @@ ${formattedSearchResults}`;
     const query = queries[i];
     const response = responses[i];
 
-    // Filter for search results (assuming kagi-ken returns similar structure)
-    const results = response?.results || response?.data || [];
+    // Filter for actual search results only (t === 0), excluding related searches (t === 1)
+    const results = (response?.results || response?.data || [])
+      .filter((item) => item.t === 0);
 
     const formattedResultsList = results.map((result, index) => {
       const resultNumber = startIndex + index;
