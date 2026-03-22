@@ -13,6 +13,7 @@ export interface SearchResponse {
   data: SearchResult[];
 }
 
+/** Performs a Kagi web search by scraping the HTML results page and parsing structured results. */
 export async function search(
   query: string,
   token: string,

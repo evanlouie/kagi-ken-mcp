@@ -47,6 +47,7 @@ export interface SummarizeResponse {
   data: { output: string };
 }
 
+/** Summarizes a URL or text input using Kagi's streaming summarization endpoint. */
 export async function summarize(
   input: string,
   token: string,

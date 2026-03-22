@@ -1,5 +1,6 @@
 import type { SearchResponse } from "../kagi/search.ts";
 
+/** Type guard that checks if an error is a Node.js ErrnoException (has a `code` property). */
 export function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }
@@ -16,6 +17,7 @@ Results for search query "${query}":
 -----
 ${formattedSearchResults}`;
 
+/** Formats search results from multiple queries into numbered, human-readable text matching the Kagi MCP output format. */
 export function formatSearchResults(queries: string[], responses: SearchResponse[]): string {
   const perQueryResponseStrs: string[] = [];
   let startIndex = 1;
@@ -44,10 +46,12 @@ export function formatSearchResults(queries: string[], responses: SearchResponse
   return perQueryResponseStrs.join("\n\n");
 }
 
+/** Extracts a message string from an unknown error, falling back to `String()` for non-Error values. */
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Formats an unknown error into a user-facing "Error: ..." string. */
 export function formatError(error: unknown): string {
   return `Error: ${errorMessage(error) || "Unknown error occurred"}`;
 }

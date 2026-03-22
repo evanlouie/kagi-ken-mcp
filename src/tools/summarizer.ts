@@ -18,6 +18,7 @@ export const summarizerInputSchema = {
     ),
 };
 
+/** MCP tool handler that summarizes a URL using Kagi's summarizer with configurable type and language. */
 export async function kagiSummarizer({
   url,
   summary_type = "summary",

@@ -19,6 +19,7 @@ export const searchInputSchema = {
     .describe("Maximum number of search results per query (default: 10, max: 50)"),
 };
 
+/** MCP tool handler that runs concurrent Kagi searches with per-query timeouts and returns formatted results. */
 export async function kagiSearchFetch({
   queries,
   limit = 10,

@@ -16,6 +16,7 @@ function readTokenFromFile(): string | null {
   }
 }
 
+/** Resolves the Kagi session token from `KAGI_SESSION_TOKEN` env var or `~/.kagi_session_token` file. */
 export function resolveToken(): string {
   const envToken = process.env.KAGI_SESSION_TOKEN;
   if (envToken !== undefined && envToken.trim() !== "") {
