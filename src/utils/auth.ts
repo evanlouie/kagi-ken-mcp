@@ -2,39 +2,31 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
-/**
- * Read token from the default file location
- * @returns {string|null} Token string or null if file doesn't exist
- */
-export function readTokenFromFile() {
+export function readTokenFromFile(): string | null {
   try {
     const tokenPath = join(homedir(), ".kagi_session_token");
     const token = readFileSync(tokenPath, "utf8").trim();
     return token || null;
-  } catch (error) {
-    if (error.code === "ENOENT") {
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
       return null;
     }
-    throw new Error(`Failed to read token file: ${error.message}`);
+    throw new Error(
+      `Failed to read token file: ${error instanceof Error ? error.message : error}`,
+    );
   }
 }
 
-/**
- * Resolve token from multiple sources in priority order:
- * 1. Environment variable KAGI_SESSION_TOKEN
- * 2. Token file ~/.kagi_session_token
- *
- * @returns {string} The resolved token
- * @throws {Error} If no token is found or invalid
- */
-export function resolveToken() {
-  // First try environment variable (for compatibility)
+export function resolveToken(): string {
   const envToken = process.env.KAGI_SESSION_TOKEN;
   if (envToken && isValidTokenFormat(envToken)) {
     return envToken.trim();
   }
 
-  // Then try file
   const fileToken = readTokenFromFile();
   if (fileToken && isValidTokenFormat(fileToken)) {
     return fileToken;
@@ -48,11 +40,6 @@ export function resolveToken() {
   );
 }
 
-/**
- * Validate token format
- * @param {string} token - Token to validate
- * @returns {boolean} True if token format is valid
- */
-export function isValidTokenFormat(token) {
+export function isValidTokenFormat(token: string): boolean {
   return typeof token === "string" && token.trim().length > 0;
 }

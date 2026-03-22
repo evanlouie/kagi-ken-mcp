@@ -3,18 +3,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
-// Import tools
-import { kagiSearchFetch, searchToolConfig } from "./tools/search.js";
-import { kagiSummarizer, summarizerToolConfig } from "./tools/summarizer.js";
+import { kagiSearchFetch, searchToolConfig } from "./tools/search.ts";
+import { kagiSummarizer, summarizerToolConfig } from "./tools/summarizer.ts";
 
 import pkg from "../package.json";
 const { version } = pkg;
 
-/**
- * Kagi MCP Server using kagi-ken package
- * Provides search and summarization capabilities compatible with official Kagi MCP
- */
 class KagiKenMcpServer {
+  private server: McpServer;
+
   constructor() {
     this.server = new McpServer({
       name: "kagi-ken-mcp",
@@ -23,11 +20,7 @@ class KagiKenMcpServer {
     this.setupTools();
   }
 
-  /**
-   * Register tools with the MCP server
-   */
-  setupTools() {
-    // Register search tool
+  private setupTools() {
     this.server.registerTool(
       searchToolConfig.name,
       {
@@ -35,10 +28,9 @@ class KagiKenMcpServer {
         description: searchToolConfig.description,
         inputSchema: searchToolConfig.inputSchema,
       },
-      async (args) => await kagiSearchFetch(args),
+      async (args) => await kagiSearchFetch(args as any),
     );
 
-    // Register summarizer tool
     this.server.registerTool(
       summarizerToolConfig.name,
       {
@@ -46,26 +38,25 @@ class KagiKenMcpServer {
         description: summarizerToolConfig.description,
         inputSchema: summarizerToolConfig.inputSchema,
       },
-      async (args) => await kagiSummarizer(args),
+      async (args) => await kagiSummarizer(args as any),
     );
   }
 
-  /**
-   * Start the MCP server
-   */
   async start() {
     try {
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
       console.error(`Kagi Ken MCP Server v${version} started successfully`);
     } catch (error) {
-      console.error(`Failed to start Kagi Ken MCP Server v${version}:`, error);
+      console.error(
+        `Failed to start Kagi Ken MCP Server v${version}:`,
+        error,
+      );
       process.exit(1);
     }
   }
 }
 
-// Handle uncaught exceptions
 process.on("uncaughtException", (error) => {
   console.error("Uncaught exception:", error);
   process.exit(1);
@@ -76,6 +67,5 @@ process.on("unhandledRejection", (reason, promise) => {
   process.exit(1);
 });
 
-// Start the server
 const server = new KagiKenMcpServer();
 await server.start();

@@ -1,19 +1,30 @@
-/**
- * @fileoverview Kagi search functionality
- */
-
 import * as cheerio from "cheerio";
-import { USER_AGENT } from "./http.js";
+import type { AnyNode } from "domhandler";
+import { USER_AGENT } from "./http.ts";
 
-/**
- * Performs a search on Kagi.com and returns structured results
- *
- * @param {string} query - Search query
- * @param {string} token - Kagi session token
- * @param {number} [limit=10] - Maximum number of search results to return (default: 10)
- * @returns {Promise<Object>} Object containing data array with search results and related searches
- */
-export async function search(query, token, limit = 10) {
+export interface SearchResult {
+  t: 0;
+  url: string;
+  title: string;
+  snippet: string;
+}
+
+export interface RelatedSearches {
+  t: 1;
+  list: string[];
+}
+
+export type SearchResultItem = SearchResult | RelatedSearches;
+
+export interface SearchResponse {
+  data: SearchResultItem[];
+}
+
+export async function search(
+  query: string,
+  token: string,
+  limit: number = 10,
+): Promise<SearchResponse> {
   if (!query || typeof query !== "string") {
     throw new Error("Search query is required and must be a string");
   }
@@ -22,10 +33,7 @@ export async function search(query, token, limit = 10) {
     throw new Error("Session token is required and must be a string");
   }
 
-  if (
-    limit !== undefined &&
-    (typeof limit !== "number" || limit < 1 || !Number.isInteger(limit))
-  ) {
+  if (typeof limit !== "number" || limit < 1 || !Number.isInteger(limit)) {
     throw new Error("Limit must be a positive integer");
   }
 
@@ -35,7 +43,7 @@ export async function search(query, token, limit = 10) {
       {
         headers: {
           "User-Agent": USER_AGENT,
-          "Cookie": `kagi_session=${token}`,
+          Cookie: `kagi_session=${token}`,
         },
       },
     );
@@ -50,30 +58,27 @@ export async function search(query, token, limit = 10) {
     const html = await response.text();
     const results = parseSearchResults(html, limit);
     return { data: results };
-  } catch (error) {
-    if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      ((error as NodeJS.ErrnoException).code === "ENOTFOUND" ||
+        (error as NodeJS.ErrnoException).code === "ECONNREFUSED")
+    ) {
       throw new Error("Network error: Unable to connect to Kagi");
     }
     throw error;
   }
 }
 
-/**
- * Parses HTML content to extract search results
- *
- * @param {string} html - HTML content from Kagi search page
- * @param {number} limit - Maximum number of search results to return
- * @returns {Array} Array of search results and related searches
- */
-function parseSearchResults(html, limit) {
+function parseSearchResults(html: string, limit: number): SearchResultItem[] {
   const $ = cheerio.load(html);
-  const results = [];
+  const results: SearchResultItem[] = [];
   let resultCount = 0;
 
   try {
-    // Extract main search results
     $(".search-result").each((_, element) => {
-      if (resultCount >= limit) return false; // Stop if limit reached
+      if (resultCount >= limit) return false;
       const result = extractSearchResult($, element);
       if (result) {
         results.push(result);
@@ -81,10 +86,9 @@ function parseSearchResults(html, limit) {
       }
     });
 
-    // Extract grouped sub-results
     if (resultCount < limit) {
       $(".sr-group .__srgi").each((_, element) => {
-        if (resultCount >= limit) return false; // Stop if limit reached
+        if (resultCount >= limit) return false;
         const result = extractGroupedResult($, element);
         if (result) {
           results.push(result);
@@ -93,7 +97,6 @@ function parseSearchResults(html, limit) {
       });
     }
 
-    // Extract related searches (always included regardless of limit)
     const relatedSearches = extractRelatedSearches($);
     if (relatedSearches.length > 0) {
       results.push({
@@ -103,89 +106,57 @@ function parseSearchResults(html, limit) {
     }
 
     return results;
-  } catch (error) {
+  } catch {
     throw new Error(
       "Failed to parse search results - unexpected HTML structure",
     );
   }
 }
 
-/**
- * Extracts a single search result from a search-result element
- *
- * @param {CheerioAPI} $ - Cheerio instance
- * @param {CheerioElement} element - Search result element
- * @returns {Object|null} Parsed search result or null if invalid
- */
-function extractSearchResult($, element) {
+function extractSearchResult(
+  $: cheerio.CheerioAPI,
+  element: AnyNode,
+): SearchResult | null {
   try {
     const $element = $(element);
-
-    // Extract title and URL
     const titleLink = $element.find(".__sri_title_link").first();
     const title = titleLink.text().trim();
     const url = titleLink.attr("href");
-
-    // Extract snippet
     const snippet = $element.find(".__sri-desc").text().trim();
 
     if (!title || !url) {
       return null;
     }
 
-    return {
-      t: 0,
-      url: url,
-      title: title,
-      snippet: snippet || "",
-    };
-  } catch (error) {
+    return { t: 0, url, title, snippet: snippet || "" };
+  } catch {
     return null;
   }
 }
 
-/**
- * Extracts a grouped search result from a __srgi element
- *
- * @param {CheerioAPI} $ - Cheerio instance
- * @param {CheerioElement} element - Grouped result element
- * @returns {Object|null} Parsed search result or null if invalid
- */
-function extractGroupedResult($, element) {
+function extractGroupedResult(
+  $: cheerio.CheerioAPI,
+  element: AnyNode,
+): SearchResult | null {
   try {
     const $element = $(element);
-
-    // Extract title and URL
     const titleLink = $element.find(".__srgi-title a").first();
     const title = titleLink.text().trim();
     const url = titleLink.attr("href");
-
-    // Extract snippet
     const snippet = $element.find(".__sri-desc").text().trim();
 
     if (!title || !url) {
       return null;
     }
 
-    return {
-      t: 0,
-      url: url,
-      title: title,
-      snippet: snippet || "",
-    };
-  } catch (error) {
+    return { t: 0, url, title, snippet: snippet || "" };
+  } catch {
     return null;
   }
 }
 
-/**
- * Extracts related search terms
- *
- * @param {CheerioAPI} $ - Cheerio instance
- * @returns {Array<string>} Array of related search terms
- */
-function extractRelatedSearches($) {
-  const relatedSearches = [];
+function extractRelatedSearches($: cheerio.CheerioAPI): string[] {
+  const relatedSearches: string[] = [];
 
   try {
     $(".related-searches a span").each((_, element) => {
@@ -194,7 +165,7 @@ function extractRelatedSearches($) {
         relatedSearches.push(term);
       }
     });
-  } catch (error) {
+  } catch {
     // Return empty array if parsing fails
   }
 
