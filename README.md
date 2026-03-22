@@ -9,11 +9,9 @@ Unlike the official Kagi API which requires API access, this MCP server uses you
 
 _"Kagi-ken"_ is a portmanteau of _"Kagi"_ (the service) and _"token"_.
 
-
 ## Why?
 
 The [Kagi API](https://help.kagi.com/kagi/api/overview.html) requires a separate API key, which are invite-only at the moment. If you already have a Kagi subscription but no API access, yet want to programmatically access Kagi's services from LLMs or agents like Claude, this MCP server provides an alternative.
-
 
 ## Features
 
@@ -29,13 +27,12 @@ It includes comprehensive error handling:
 
 - Connection timeouts (10 seconds per search)
 - Invalid input validation
-- Environment variable validation  
+- Environment variable validation
 - Graceful error formatting
 
 <a href="https://glama.ai/mcp/servers/@czottmann/kagi-ken-mcp">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@czottmann/kagi-ken-mcp/badge" alt="kagi-kan-mcp MCP server" />
 </a>
-
 
 ## Installation
 
@@ -58,6 +55,7 @@ The server will automatically try the environment variable first, then fall back
 Add kagi-ken-mcp to your `claude_desktop_config.json` which you can open from the Claude Desktop app via Settings → Developer → Local MCP Servers → Edit Config.
 
 #### Option 1: Using token file (recommended)
+
 ```json
 {
   "mcpServers": {
@@ -70,6 +68,7 @@ Add kagi-ken-mcp to your `claude_desktop_config.json` which you can open from th
 ```
 
 #### Option 2: Using environment variable
+
 ```json
 {
   "mcpServers": {
@@ -117,43 +116,40 @@ Disable Claude Code's built-in web search (optional) by setting the permission i
 ```json
 {
   "permissions": {
-    "deny": [
-      "WebSearch"
-    ],
-    "allow": [
-      "mcp__kagi-ken-mcp__kagi_search_fetch",
-      "mcp__kagi-ken-mcp__kagi_summarizer"
-    ]
+    "deny": ["WebSearch"],
+    "allow": ["mcp__kagi-ken-mcp__kagi_search_fetch", "mcp__kagi-ken-mcp__kagi_summarizer"]
   }
 }
 ```
-
 
 ## Usage: Pose query that requires use of a tool
 
 e.g. _"Who was time's 2024 person of the year?"_ for search, or "summarize this video: https://www.youtube.com/watch?v=sczwaYyaevY" for summarizer.
 
-
 ## Tools
 
 ### `kagi_search_fetch`
+
 Fetch web results based on one or more queries using the Kagi Search API. Results are numbered continuously for easy reference.
 
 **Parameters:**
+
 - `queries` (array of strings): One or more search queries
 
-### `kagi_summarizer` 
+### `kagi_summarizer`
+
 Summarize content from URLs using the Kagi Summarizer API. Supports various document types including webpages, videos, and audio.
 
 **Parameters:**
-- `url` (string): URL to summarize
-- `summary_type` (enum): `"summary"` for paragraph prose or `"takeaway"` for bullet points (default: `"summary"`)  
-- `target_language` (string, optional): Language code (e.g., `"EN"` for English, default: `"EN"`)
 
+- `url` (string): URL to summarize
+- `summary_type` (enum): `"summary"` for paragraph prose or `"takeaway"` for bullet points (default: `"summary"`)
+- `target_language` (string, optional): Language code (e.g., `"EN"` for English, default: `"EN"`)
 
 ## Development
 
 ### Project Structure
+
 ```
 kagi-ken-mcp/
 ├── src/
@@ -170,6 +166,7 @@ kagi-ken-mcp/
 ### Installation
 
 1. **Clone the repository:**
+
    ```bash
    git clone <repository-url>
    cd kagi-ken-mcp
@@ -181,6 +178,7 @@ kagi-ken-mcp/
    ```
 
 ### Running in Development Mode
+
 ```bash
 npm run dev
 ```
@@ -188,6 +186,7 @@ npm run dev
 ### Debugging
 
 Use the MCP Inspector to debug:
+
 ```bash
 npx @modelcontextprotocol/inspector node ./src/index.js
 ```
@@ -202,7 +201,6 @@ Then access the inspector at `http://localhost:5173`. If using environment varia
 4. Test with the MCP Inspector
 5. Submit a pull request
 
-
 ## Author
 
 Carlo Zottmann, <carlo@zottmann.dev>, https://c.zottmann.dev, https://github.com/czottmann.
@@ -211,7 +209,6 @@ This project is neither affiliated with nor endorsed by Kagi. I'm just a very ha
 
 > [!TIP]
 > I make Shortcuts-related macOS & iOS productivity apps like [Actions For Obsidian](https://actions.work/actions-for-obsidian), [Browser Actions](https://actions.work/browser-actions) (which adds Shortcuts support for several major browsers), and [BarCuts](https://actions.work/barcuts) (a surprisingly useful contextual Shortcuts launcher). Check them out!
-
 
 ## Related Projects
 

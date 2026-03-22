@@ -31,10 +31,9 @@ export async function search(
   }
 
   try {
-    const response = await fetch(
-      `https://kagi.com/html/search?q=${encodeURIComponent(query)}`,
-      { headers: kagiHeaders(token) },
-    );
+    const response = await fetch(`https://kagi.com/html/search?q=${encodeURIComponent(query)}`, {
+      headers: kagiHeaders(token),
+    });
 
     checkResponse(response);
 
@@ -54,7 +53,8 @@ function parseSearchResults(html: string, limit: number): SearchResult[] {
   try {
     $(".search-result").each((_, element) => {
       if (resultCount >= limit) return false;
-      const result = extractResult($, element, ".__sri_title_link");
+      const $el = $(element);
+      const result = extractResult($el, $el.find(".__sri_title_link").first());
       if (result) {
         results.push(result);
         resultCount++;
@@ -64,7 +64,8 @@ function parseSearchResults(html: string, limit: number): SearchResult[] {
     if (resultCount < limit) {
       $(".sr-group .__srgi").each((_, element) => {
         if (resultCount >= limit) return false;
-        const result = extractResult($, element, ".__srgi-title a");
+        const $el = $(element);
+        const result = extractResult($el, $el.find(".__srgi-title a").first());
         if (result) {
           results.push(result);
           resultCount++;
@@ -74,25 +75,20 @@ function parseSearchResults(html: string, limit: number): SearchResult[] {
 
     return results;
   } catch {
-    throw new Error(
-      "Failed to parse search results - unexpected HTML structure",
-    );
+    throw new Error("Failed to parse search results - unexpected HTML structure");
   }
 }
 
 function extractResult(
-  $: cheerio.CheerioAPI,
-  element: AnyNode,
-  titleSelector: string,
+  $element: cheerio.Cheerio<AnyNode>,
+  titleLink: cheerio.Cheerio<AnyNode>,
 ): SearchResult | null {
   try {
-    const $element = $(element);
-    const titleLink = $element.find(titleSelector).first();
     const title = titleLink.text().trim();
     const url = titleLink.attr("href");
     const snippet = $element.find(".__sri-desc").text().trim();
 
-    if (!title || !url) {
+    if (title === "" || url === undefined || url === "") {
       return null;
     }
 

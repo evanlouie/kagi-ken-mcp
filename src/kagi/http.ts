@@ -1,3 +1,7 @@
+import { isErrnoException } from "../utils/formatting.ts";
+
+export { isErrnoException };
+
 export const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
 
@@ -17,10 +21,8 @@ export function checkResponse(response: Response): void {
   }
 }
 
-export function isNetworkError(error: unknown): boolean {
-  if (!(error instanceof Error) || !("code" in error)) return false;
-  const code = (error as NodeJS.ErrnoException).code;
-  return code === "ENOTFOUND" || code === "ECONNREFUSED";
+export function isNetworkError(error: unknown): error is NodeJS.ErrnoException {
+  return isErrnoException(error) && (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED");
 }
 
 export function rethrowAsNetworkError(error: unknown): never {

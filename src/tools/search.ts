@@ -1,5 +1,6 @@
 import { search, type SearchResponse } from "../kagi/search.ts";
-import { formatError, formatSearchResults, getToken } from "../utils/formatting.ts";
+import { errorMessage, formatError, formatSearchResults } from "../utils/formatting.ts";
+import { resolveToken } from "../utils/auth.ts";
 import { z } from "zod";
 
 export const searchInputSchema = {
@@ -15,9 +16,7 @@ export const searchInputSchema = {
     .min(1)
     .max(50)
     .optional()
-    .describe(
-      "Maximum number of search results per query (default: 10, max: 50)",
-    ),
+    .describe("Maximum number of search results per query (default: 10, max: 50)"),
 };
 
 export async function kagiSearchFetch({
@@ -28,28 +27,19 @@ export async function kagiSearchFetch({
   limit?: number;
 }) {
   try {
-    const token = getToken();
+    const token = resolveToken();
 
-    const searchPromises = queries.map((query) =>
-      search(query.trim(), token, limit),
-    );
+    const searchPromises = queries.map((query) => search(query.trim(), token, limit));
 
     const results = await Promise.allSettled(
-      searchPromises.map(
-        (promise) =>
-          Promise.race([
-            promise,
-            new Promise<never>((_, reject) => {
-              const timer = setTimeout(
-                () => reject(new Error("Search timeout")),
-                10000,
-              );
-              promise.then(
-                () => clearTimeout(timer),
-                () => clearTimeout(timer),
-              );
-            }),
-          ]),
+      searchPromises.map((promise) =>
+        Promise.race([
+          promise,
+          new Promise<never>((_, reject) => {
+            const id = setTimeout(() => { reject(new Error("Search timeout")); }, 10_000);
+            void promise.finally(() => { clearTimeout(id); });
+          }),
+        ]),
       ),
     );
 
@@ -61,9 +51,7 @@ export async function kagiSearchFetch({
       if (result.status === "fulfilled") {
         responses.push(result.value);
       } else {
-        errors.push(
-          `Query "${queries[i]}": ${result.reason?.message || result.reason}`,
-        );
+        errors.push(`Query "${queries[i]}": ${errorMessage(result.reason)}`);
         responses.push({ data: [] });
       }
     }
@@ -93,7 +81,7 @@ export const searchToolConfig = {
     from all queries given. They are numbered continuously, so that a user may be able to refer to a
     result by a specific number. Supports optional limit parameter to control results per query.
     `
-    .replace(/\s+/gs, " ")
+    .replaceAll(/\s+/gs, " ")
     .trim(),
   inputSchema: searchInputSchema,
 };

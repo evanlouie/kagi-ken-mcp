@@ -1,50 +1,36 @@
-import { resolveToken } from "./auth.ts";
-import type { SearchResult } from "../kagi/search.ts";
+import type { SearchResponse } from "../kagi/search.ts";
 
-interface SearchResponseLike {
-  results?: SearchResult[];
-  data?: SearchResult[];
+export function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
 
-export function formatSearchResults(
-  queries: string[],
-  responses: SearchResponseLike[],
-): string {
-  const resultTemplate = (
-    resultNumber: number,
-    title: string,
-    url: string,
-    snippet: string,
-  ) =>
-    `${resultNumber}: ${title}
+const resultTemplate = (resultNumber: number, title: string, url: string, snippet: string) =>
+  `${resultNumber}: ${title}
 ${url}
 Published Date: Not Available
 ${snippet}`;
 
-  const queryResponseTemplate = (
-    query: string,
-    formattedSearchResults: string,
-  ) =>
-    `-----
+const queryResponseTemplate = (query: string, formattedSearchResults: string) =>
+  `-----
 Results for search query "${query}":
 -----
 ${formattedSearchResults}`;
 
+export function formatSearchResults(queries: string[], responses: SearchResponse[]): string {
   const perQueryResponseStrs: string[] = [];
   let startIndex = 1;
 
   for (let i = 0; i < queries.length; i++) {
     const query = queries[i]!;
-    const response = responses[i];
+    const results = responses[i]?.data ?? [];
 
-    const results = response?.results || response?.data || [];
-
+    const base = startIndex;
     const formattedResultsList = results.map((result, index) =>
       resultTemplate(
-        startIndex + index,
-        result.title || "No Title",
-        result.url || "",
-        result.snippet || "No snippet available",
+        base + index,
+        result.title ?? "No Title",
+        result.url ?? "",
+        result.snippet ?? "No snippet available",
       ),
     );
 
@@ -58,13 +44,10 @@ ${formattedSearchResults}`;
   return perQueryResponseStrs.join("\n\n");
 }
 
-export function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return `Error: ${error.message || error.toString()}`;
-  }
-  return `Error: ${error || "Unknown error occurred"}`;
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
-export function getToken(): string {
-  return resolveToken();
+export function formatError(error: unknown): string {
+  return `Error: ${errorMessage(error) || "Unknown error occurred"}`;
 }

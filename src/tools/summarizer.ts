@@ -1,5 +1,6 @@
-import { summarize } from "../kagi/summarize.ts";
-import { formatError, getToken } from "../utils/formatting.ts";
+import { summarize, supportedLanguageSchema, type SupportedLanguage } from "../kagi/summarize.ts";
+import { formatError } from "../utils/formatting.ts";
+import { resolveToken } from "../utils/auth.ts";
 import { z } from "zod";
 
 export const summarizerInputSchema = {
@@ -10,8 +11,7 @@ export const summarizerInputSchema = {
     .describe(
       "Type of summary to produce. Options are 'summary' for paragraph prose and 'takeaway' for a bulleted list of key points.",
     ),
-  target_language: z
-    .string()
+  target_language: supportedLanguageSchema
     .optional()
     .describe(
       "Desired output language using language codes (e.g., 'EN' for English). If not specified, the document's original language influences the output.",
@@ -25,14 +25,14 @@ export async function kagiSummarizer({
 }: {
   url: string;
   summary_type?: "summary" | "takeaway";
-  target_language?: string;
+  target_language?: SupportedLanguage;
 }) {
   try {
-    const token = getToken();
+    const token = resolveToken();
 
     const result = await summarize(url, token, {
       type: summary_type,
-      language: (target_language || "EN") as any,
+      language: target_language ?? "EN",
       isUrl: true,
     });
 
@@ -52,7 +52,7 @@ export const summarizerToolConfig = {
     Summarize content from a URL using the Kagi.com Summarizer API. The Summarizer can summarize any
     document type (text webpage, video, audio, etc.)
     `
-    .replace(/\s+/gs, " ")
+    .replaceAll(/\s+/gs, " ")
     .trim(),
   inputSchema: summarizerInputSchema,
 };

@@ -1,17 +1,41 @@
-import {
-  USER_AGENT,
-  kagiHeaders,
-  checkResponse,
-  rethrowAsNetworkError,
-} from "./http.ts";
+import { kagiHeaders, checkResponse, rethrowAsNetworkError } from "./http.ts";
+import { z } from "zod";
 
 export const SUPPORTED_LANGUAGES = [
-  "BG", "CS", "DA", "DE", "EL", "EN", "ES", "ET", "FI", "FR",
-  "HU", "ID", "IT", "JA", "KO", "LT", "LV", "NB", "NL", "PL",
-  "PT", "RO", "RU", "SK", "SL", "SV", "TR", "UK", "ZH", "ZH-HANT",
+  "BG",
+  "CS",
+  "DA",
+  "DE",
+  "EL",
+  "EN",
+  "ES",
+  "ET",
+  "FI",
+  "FR",
+  "HU",
+  "ID",
+  "IT",
+  "JA",
+  "KO",
+  "LT",
+  "LV",
+  "NB",
+  "NL",
+  "PL",
+  "PT",
+  "RO",
+  "RU",
+  "SK",
+  "SL",
+  "SV",
+  "TR",
+  "UK",
+  "ZH",
+  "ZH-HANT",
 ] as const;
 
-export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+export const supportedLanguageSchema = z.enum(SUPPORTED_LANGUAGES);
+export type SupportedLanguage = z.infer<typeof supportedLanguageSchema>;
 
 export interface SummarizeOptions {
   type?: "summary" | "takeaway";
@@ -36,14 +60,7 @@ export async function summarize(
     throw new Error("Session token is required and must be a string");
   }
 
-  const { type = "summary", language = "EN", isUrl = false } = options || {};
-
-  if (!(SUPPORTED_LANGUAGES as readonly string[]).includes(language)) {
-    const sl = SUPPORTED_LANGUAGES.join(", ");
-    throw new Error(
-      `Unsupported language code '${language}'. Supported languages: ${sl}`,
-    );
-  }
+  const { type = "summary", language = "EN", isUrl = false } = options ?? {};
 
   try {
     const sharedHeaders = {
@@ -53,7 +70,6 @@ export async function summarize(
       Host: "kagi.com",
       Pragma: "no-cache",
       Referer: "https://kagi.com/summarizer",
-      "User-Agent": USER_AGENT,
     };
 
     let response: Response;
@@ -91,43 +107,41 @@ export async function summarize(
     const streamData = await response.text();
     const parsedResponse = parseStreamingSummary(streamData);
 
-    const output =
-      parsedResponse.output_data?.markdown ?? parsedResponse.md ?? "";
+    const output = parsedResponse.output_data?.markdown ?? parsedResponse.md ?? "";
     return { data: { output } };
   } catch (error: unknown) {
     rethrowAsNetworkError(error);
   }
 }
 
-interface StreamingSummaryResponse {
-  output_data?: { markdown?: string };
-  md?: string;
-}
+const streamingSummarySchema = z.object({
+  output_data: z.object({ markdown: z.string().optional() }).optional(),
+  md: z.string().optional(),
+});
+
+type StreamingSummaryResponse = z.infer<typeof streamingSummarySchema>;
 
 function parseStreamingSummary(streamData: string): StreamingSummaryResponse {
-  try {
-    const messages = streamData.split("\x00").filter((msg) => msg.trim());
+  const lastNull = streamData.lastIndexOf("\u0000");
+  const lastMessage = (lastNull === -1 ? streamData : streamData.slice(lastNull + 1)).trim();
 
-    if (messages.length === 0) {
-      throw new Error("No summary data received");
-    }
-
-    const lastMessage = messages[messages.length - 1]!.trim();
-
-    const jsonString = lastMessage
-      .replace(/^final:/, "")
-      .replace(/^new_message\.json:/, "")
-      .trim();
-
-    if (!jsonString) {
-      throw new Error("Empty summary received");
-    }
-
-    return JSON.parse(jsonString);
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      throw new Error("Failed to parse summary JSON response");
-    }
-    throw new Error("Failed to parse summary response");
+  if (lastMessage === "") {
+    throw new Error("No summary data received");
   }
+
+  const jsonString = lastMessage
+    .replace(/^final:/, "")
+    .replace(/^new_message\.json:/, "")
+    .trim();
+
+  if (!jsonString) {
+    throw new Error("Empty summary received");
+  }
+
+  const parsed: unknown = JSON.parse(jsonString);
+  const result = streamingSummarySchema.safeParse(parsed);
+  if (!result.success) {
+    throw new TypeError("Failed to parse summary response", { cause: result.error });
+  }
+  return result.data;
 }

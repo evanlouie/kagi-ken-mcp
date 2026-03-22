@@ -1,33 +1,29 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { errorMessage, isErrnoException } from "./formatting.ts";
+
 function readTokenFromFile(): string | null {
   try {
     const tokenPath = join(homedir(), ".kagi_session_token");
     const token = readFileSync(tokenPath, "utf8").trim();
-    return token || null;
+    return token === "" ? null : token;
   } catch (error: unknown) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
       return null;
     }
-    throw new Error(
-      `Failed to read token file: ${error instanceof Error ? error.message : error}`,
-    );
+    throw new Error(`Failed to read token file: ${errorMessage(error)}`, { cause: error });
   }
 }
 
 export function resolveToken(): string {
   const envToken = process.env.KAGI_SESSION_TOKEN;
-  if (envToken?.trim()) {
+  if (envToken !== undefined && envToken.trim() !== "") {
     return envToken.trim();
   }
 
   const fileToken = readTokenFromFile();
-  if (fileToken) {
+  if (fileToken !== null) {
     return fileToken;
   }
 

@@ -1,9 +1,25 @@
 {
   "name": "kagi-ken-mcp",
   "version": "1.3.0",
+  "private": true,
   "description": "Kagi MCP server using kagi-ken package",
-  "type": "module",
-  "main": "src/index.ts",
+  "keywords": [
+    "claude",
+    "kagi",
+    "mcp",
+    "search",
+    "summarizer"
+  ],
+  "homepage": "https://github.com/czottmann/kagi-ken-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/czottmann/kagi-ken-mcp/issues"
+  },
+  "license": "MIT",
+  "author": "Carlo Zottmann <carlo@zottmann.dev>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/czottmann/kagi-ken-mcp.git"
+  },
   "bin": {
     "kagi-ken-mcp": "src/index.ts"
   },
@@ -13,38 +29,25 @@
     "README.md",
     "LICENSE.md"
   ],
+  "type": "module",
+  "main": "src/index.ts",
   "scripts": {
     "start": "bun src/index.ts",
     "dev": "bun --inspect src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsgo --noEmit",
+    "lint": "oxlint --type-aware --type-check src/"
   },
-  "keywords": [
-    "mcp",
-    "kagi",
-    "search",
-    "summarizer",
-    "claude"
-  ],
-  "author": "Carlo Zottmann <carlo@zottmann.dev>",
-  "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "cheerio": "^1.1.2",
     "zod": "^3.22.0"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/czottmann/kagi-ken-mcp.git"
-  },
-  "bugs": {
-    "url": "https://github.com/czottmann/kagi-ken-mcp/issues"
-  },
-  "homepage": "https://github.com/czottmann/kagi-ken-mcp#readme",
-  "private": true,
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@typescript/native-preview": "^7.0.0-dev.20260322.1",
+    "oxfmt": "^0.41.0",
+    "oxlint": "^1.56.0",
+    "oxlint-tsgolint": "^0.17.1"
   },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
+  "peerDependencies": {}
 }

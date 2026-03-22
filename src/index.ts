@@ -48,10 +48,7 @@ class KagiKenMcpServer {
       await this.server.connect(transport);
       console.error(`Kagi Ken MCP Server v${version} started successfully`);
     } catch (error) {
-      console.error(
-        `Failed to start Kagi Ken MCP Server v${version}:`,
-        error,
-      );
+      console.error(`Failed to start Kagi Ken MCP Server v${version}:`, error);
       process.exit(1);
     }
   }
