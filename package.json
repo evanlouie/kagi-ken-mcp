@@ -35,7 +35,8 @@
     "start": "bun src/index.ts",
     "dev": "bun --inspect src/index.ts",
     "typecheck": "tsgo --noEmit",
-    "lint": "oxlint --type-aware --type-check src/"
+    "lint": "oxlint --type-aware --type-check src/",
+    "fmt": "oxfmt src/"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

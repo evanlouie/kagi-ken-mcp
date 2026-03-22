@@ -14,6 +14,7 @@ bun run start                                            # Run the MCP server
 bun run dev                                              # Run with inspector
 bun run typecheck                                        # Type-check with tsgo
 bun run lint                                             # Lint with oxlint
+bun run fmt                                              # Format with oxfmt
 bunx @modelcontextprotocol/inspector bun src/index.ts    # Debug with MCP Inspector (localhost:5173)
 ```
 

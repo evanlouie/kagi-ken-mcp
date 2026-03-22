@@ -37,8 +37,12 @@ export async function kagiSearchFetch({
         Promise.race([
           promise,
           new Promise<never>((_, reject) => {
-            const id = setTimeout(() => { reject(new Error("Search timeout")); }, 10_000);
-            void promise.finally(() => { clearTimeout(id); });
+            const id = setTimeout(() => {
+              reject(new Error("Search timeout"));
+            }, 10_000);
+            void promise.finally(() => {
+              clearTimeout(id);
+            });
           }),
         ]),
       ),
