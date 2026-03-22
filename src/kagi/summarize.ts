@@ -1,4 +1,9 @@
-import { USER_AGENT } from "./http.ts";
+import {
+  USER_AGENT,
+  kagiHeaders,
+  checkResponse,
+  rethrowAsNetworkError,
+} from "./http.ts";
 
 export const SUPPORTED_LANGUAGES = [
   "BG", "CS", "DA", "DE", "EL", "EN", "ES", "ET", "FI", "FR",
@@ -10,7 +15,7 @@ export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
 export interface SummarizeOptions {
   type?: "summary" | "takeaway";
-  language?: string;
+  language?: SupportedLanguage;
   isUrl?: boolean;
 }
 
@@ -23,19 +28,15 @@ export async function summarize(
   token: string,
   options?: SummarizeOptions,
 ): Promise<SummarizeResponse> {
-  if (!input || typeof input !== "string") {
+  if (!input) {
     throw new Error("Input is required and must be a string");
   }
 
-  if (!token || typeof token !== "string") {
+  if (!token) {
     throw new Error("Session token is required and must be a string");
   }
 
   const { type = "summary", language = "EN", isUrl = false } = options || {};
-
-  if (!["summary", "takeaway"].includes(type)) {
-    throw new Error("Type must be 'summary' or 'takeaway'");
-  }
 
   if (!(SUPPORTED_LANGUAGES as readonly string[]).includes(language)) {
     const sl = SUPPORTED_LANGUAGES.join(", ");
@@ -45,6 +46,16 @@ export async function summarize(
   }
 
   try {
+    const sharedHeaders = {
+      ...kagiHeaders(token),
+      Accept: "application/vnd.kagi.stream",
+      Connection: "keep-alive",
+      Host: "kagi.com",
+      Pragma: "no-cache",
+      Referer: "https://kagi.com/summarizer",
+      "User-Agent": USER_AGENT,
+    };
+
     let response: Response;
 
     if (isUrl) {
@@ -56,15 +67,7 @@ export async function summarize(
 
       response = await fetch(url.toString(), {
         method: "GET",
-        headers: {
-          Accept: "application/vnd.kagi.stream",
-          Connection: "keep-alive",
-          Cookie: `kagi_session=${token}`,
-          Host: "kagi.com",
-          Pragma: "no-cache",
-          Referer: "https://kagi.com/summarizer",
-          "User-Agent": USER_AGENT,
-        },
+        headers: sharedHeaders,
       });
     } else {
       const formData = new URLSearchParams();
@@ -76,47 +79,32 @@ export async function summarize(
       response = await fetch("https://kagi.com/mother/summary_labs/", {
         method: "POST",
         headers: {
-          Accept: "application/vnd.kagi.stream",
-          Connection: "keep-alive",
+          ...sharedHeaders,
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-          Cookie: `kagi_session=${token}`,
-          Host: "kagi.com",
-          Pragma: "no-cache",
-          Referer: "https://kagi.com/summarizer",
-          "User-Agent": USER_AGENT,
         },
         body: formData,
       });
     }
 
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        throw new Error("Invalid or expired session token");
-      }
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
+    checkResponse(response);
 
     const streamData = await response.text();
     const parsedResponse = parseStreamingSummary(streamData);
 
     const output =
-      parsedResponse?.output_data?.markdown ?? parsedResponse?.md ?? "";
+      parsedResponse.output_data?.markdown ?? parsedResponse.md ?? "";
     return { data: { output } };
   } catch (error: unknown) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      ((error as NodeJS.ErrnoException).code === "ENOTFOUND" ||
-        (error as NodeJS.ErrnoException).code === "ECONNREFUSED")
-    ) {
-      throw new Error("Network error: Unable to connect to Kagi");
-    }
-    throw error;
+    rethrowAsNetworkError(error);
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseStreamingSummary(streamData: string): Record<string, any> {
+interface StreamingSummaryResponse {
+  output_data?: { markdown?: string };
+  md?: string;
+}
+
+function parseStreamingSummary(streamData: string): StreamingSummaryResponse {
   try {
     const messages = streamData.split("\x00").filter((msg) => msg.trim());
 

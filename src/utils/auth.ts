@@ -1,8 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
-
-export function readTokenFromFile(): string | null {
+function readTokenFromFile(): string | null {
   try {
     const tokenPath = join(homedir(), ".kagi_session_token");
     const token = readFileSync(tokenPath, "utf8").trim();
@@ -23,12 +22,12 @@ export function readTokenFromFile(): string | null {
 
 export function resolveToken(): string {
   const envToken = process.env.KAGI_SESSION_TOKEN;
-  if (envToken && isValidTokenFormat(envToken)) {
+  if (envToken?.trim()) {
     return envToken.trim();
   }
 
   const fileToken = readTokenFromFile();
-  if (fileToken && isValidTokenFormat(fileToken)) {
+  if (fileToken) {
     return fileToken;
   }
 
@@ -38,8 +37,4 @@ export function resolveToken(): string {
       "2. Save your token to ~/.kagi_session_token file\n\n" +
       "Get your token from: https://kagi.com/settings?p=api",
   );
-}
-
-export function isValidTokenFormat(token: string): boolean {
-  return typeof token === "string" && token.trim().length > 0;
 }

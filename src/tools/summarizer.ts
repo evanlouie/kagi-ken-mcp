@@ -1,5 +1,5 @@
-import { summarize, SUPPORTED_LANGUAGES } from "../kagi/summarize.ts";
-import { formatError, getEnvironmentConfig } from "../utils/formatting.ts";
+import { summarize } from "../kagi/summarize.ts";
+import { formatError, getToken } from "../utils/formatting.ts";
 import { z } from "zod";
 
 export const summarizerInputSchema = {
@@ -28,54 +28,16 @@ export async function kagiSummarizer({
   target_language?: string;
 }) {
   try {
-    if (!url) {
-      throw new Error("Summarizer called with no URL.");
-    }
+    const token = getToken();
 
-    const { token, engine } = getEnvironmentConfig();
-
-    if (!["summary", "takeaway"].includes(summary_type)) {
-      throw new Error(
-        `Invalid summary_type: ${summary_type}. Must be 'summary' or 'takeaway'.`,
-      );
-    }
-
-    const language = target_language || "EN";
-
-    if (
-      target_language &&
-      !(SUPPORTED_LANGUAGES as readonly string[]).includes(language)
-    ) {
-      console.warn(
-        `Warning: Language '${language}' may not be supported. Supported languages: ${SUPPORTED_LANGUAGES.join(", ")}`,
-      );
-    }
-
-    if (engine && engine !== "default") {
-      console.warn(
-        `Note: Engine selection (${engine}) from KAGI_SUMMARIZER_ENGINE may not be supported. Using default behavior.`,
-      );
-    }
-
-    const options = {
-      type: summary_type as "summary" | "takeaway",
-      language,
+    const result = await summarize(url, token, {
+      type: summary_type,
+      language: (target_language || "EN") as any,
       isUrl: true,
-    };
-
-    const result = await summarize(url, token, options);
-
-    let summaryText: string;
-    if (typeof result === "string") {
-      summaryText = result;
-    } else if (result?.data?.output) {
-      summaryText = result.data.output;
-    } else {
-      summaryText = JSON.stringify(result, null, 2);
-    }
+    });
 
     return {
-      content: [{ type: "text" as const, text: summaryText }],
+      content: [{ type: "text" as const, text: result.data.output }],
     };
   } catch (error) {
     return {

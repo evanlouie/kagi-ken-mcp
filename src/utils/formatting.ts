@@ -1,9 +1,9 @@
 import { resolveToken } from "./auth.ts";
-import type { SearchResultItem } from "../kagi/search.ts";
+import type { SearchResult } from "../kagi/search.ts";
 
 interface SearchResponseLike {
-  results?: SearchResultItem[];
-  data?: SearchResultItem[];
+  results?: SearchResult[];
+  data?: SearchResult[];
 }
 
 export function formatSearchResults(
@@ -14,12 +14,11 @@ export function formatSearchResults(
     resultNumber: number,
     title: string,
     url: string,
-    published: string,
     snippet: string,
   ) =>
     `${resultNumber}: ${title}
 ${url}
-Published Date: ${published}
+Published Date: Not Available
 ${snippet}`;
 
   const queryResponseTemplate = (
@@ -38,21 +37,16 @@ ${formattedSearchResults}`;
     const query = queries[i]!;
     const response = responses[i];
 
-    const results = (response?.results || response?.data || []).filter(
-      (item) => item.t === 0,
-    );
+    const results = response?.results || response?.data || [];
 
-    const formattedResultsList = results.map((result, index) => {
-      const resultNumber = startIndex + index;
-      if (result.t !== 0) return "";
-      return resultTemplate(
-        resultNumber,
+    const formattedResultsList = results.map((result, index) =>
+      resultTemplate(
+        startIndex + index,
         result.title || "No Title",
         result.url || "",
-        "Not Available",
         result.snippet || "No snippet available",
-      );
-    });
+      ),
+    );
 
     startIndex += results.length;
 
@@ -71,13 +65,6 @@ export function formatError(error: unknown): string {
   return `Error: ${error || "Unknown error occurred"}`;
 }
 
-export interface EnvironmentConfig {
-  token: string;
-  engine: string;
-}
-
-export function getEnvironmentConfig(): EnvironmentConfig {
-  const token = resolveToken();
-  const engine = process.env.KAGI_SUMMARIZER_ENGINE || "default";
-  return { token, engine };
+export function getToken(): string {
+  return resolveToken();
 }

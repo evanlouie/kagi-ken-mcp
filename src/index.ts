@@ -15,7 +15,7 @@ class KagiKenMcpServer {
   constructor() {
     this.server = new McpServer({
       name: "kagi-ken-mcp",
-      version: "1.0.0",
+      version,
     });
     this.setupTools();
   }
@@ -28,7 +28,7 @@ class KagiKenMcpServer {
         description: searchToolConfig.description,
         inputSchema: searchToolConfig.inputSchema,
       },
-      async (args) => await kagiSearchFetch(args as any),
+      (args) => kagiSearchFetch(args as Parameters<typeof kagiSearchFetch>[0]),
     );
 
     this.server.registerTool(
@@ -38,7 +38,7 @@ class KagiKenMcpServer {
         description: summarizerToolConfig.description,
         inputSchema: summarizerToolConfig.inputSchema,
       },
-      async (args) => await kagiSummarizer(args as any),
+      (args) => kagiSummarizer(args as Parameters<typeof kagiSummarizer>[0]),
     );
   }
 
@@ -62,8 +62,8 @@ process.on("uncaughtException", (error) => {
   process.exit(1);
 });
 
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("Unhandled rejection at:", promise, "reason:", reason);
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason);
   process.exit(1);
 });
 

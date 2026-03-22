@@ -1,9 +1,5 @@
-import { search } from "../kagi/search.ts";
-import {
-  formatError,
-  formatSearchResults,
-  getEnvironmentConfig,
-} from "../utils/formatting.ts";
+import { search, type SearchResponse } from "../kagi/search.ts";
+import { formatError, formatSearchResults, getToken } from "../utils/formatting.ts";
 import { z } from "zod";
 
 export const searchInputSchema = {
@@ -32,46 +28,47 @@ export async function kagiSearchFetch({
   limit?: number;
 }) {
   try {
-    if (!queries || queries.length === 0) {
-      throw new Error("Search called with no queries.");
-    }
+    const token = getToken();
 
-    const { token } = getEnvironmentConfig();
-
-    const searchPromises = queries.map((query) => {
-      if (typeof query !== "string" || query.trim() === "") {
-        throw new Error("All queries must be non-empty strings");
-      }
-      return search(query.trim(), token, limit);
-    });
+    const searchPromises = queries.map((query) =>
+      search(query.trim(), token, limit),
+    );
 
     const results = await Promise.allSettled(
-      searchPromises.map((promise) =>
-        Promise.race([
-          promise,
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Search timeout")), 10000),
-          ),
-        ]),
+      searchPromises.map(
+        (promise) =>
+          Promise.race([
+            promise,
+            new Promise<never>((_, reject) => {
+              const timer = setTimeout(
+                () => reject(new Error("Search timeout")),
+                10000,
+              );
+              promise.then(
+                () => clearTimeout(timer),
+                () => clearTimeout(timer),
+              );
+            }),
+          ]),
       ),
     );
 
-    const responses: { results?: never[]; data?: unknown[] }[] = [];
+    const responses: SearchResponse[] = [];
     const errors: string[] = [];
 
     for (let i = 0; i < results.length; i++) {
       const result = results[i]!;
       if (result.status === "fulfilled") {
-        responses.push(result.value as { data?: unknown[] });
+        responses.push(result.value);
       } else {
         errors.push(
           `Query "${queries[i]}": ${result.reason?.message || result.reason}`,
         );
-        responses.push({ results: [] });
+        responses.push({ data: [] });
       }
     }
 
-    const formattedResults = formatSearchResults(queries, responses as any);
+    const formattedResults = formatSearchResults(queries, responses);
 
     let finalResponse = formattedResults;
     if (errors.length > 0) {
