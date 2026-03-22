@@ -1,16 +1,14 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-
-import { createRequire } from "node:module";
 
 // Import tools
 import { kagiSearchFetch, searchToolConfig } from "./tools/search.js";
 import { kagiSummarizer, summarizerToolConfig } from "./tools/summarizer.js";
 
-const require = createRequire(import.meta.url);
-const { version } = require("../package.json");
+import pkg from "../package.json";
+const { version } = pkg;
 
 /**
  * Kagi MCP Server using kagi-ken package
