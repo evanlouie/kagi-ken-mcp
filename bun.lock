@@ -6,7 +6,7 @@
       "name": "kagi-ken-mcp",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.0.0",
-        "kagi-ken": "github:evanlouie/kagi-ken",
+        "cheerio": "^1.1.2",
         "zod": "^3.22.0",
       },
     },
@@ -137,8 +137,6 @@
     "json-schema-traverse": ["json-schema-traverse@1.0.0", "", {}, "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug=="],
 
     "json-schema-typed": ["json-schema-typed@8.0.2", "", {}, "sha512-fQhoXdcvc3V28x7C7BMs4P5+kNlgUURe2jmUT1T//oBRMDrqy1QPelJimwZGo7Hg9VPV3EQV5Bnq4hbFy2vetA=="],
-
-    "kagi-ken": ["kagi-ken@github:evanlouie/kagi-ken#2d29014", { "dependencies": { "cheerio": "^1.1.2" } }, "evanlouie-kagi-ken-2d29014", "sha512-P3XzXSW3hkhP4LptErYWet8YARE1D8z/wFOMhcGk2h+UjVVuvoqaUaViwf/ISXVYg5tCIwIARnYb6aYJAIiSbw=="],
 
     "math-intrinsics": ["math-intrinsics@1.1.0", "", {}, "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g=="],
 

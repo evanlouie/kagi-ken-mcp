@@ -1,4 +1,4 @@
-import { search } from "kagi-ken";
+import { search } from "../kagi/search.js";
 import {
   formatError,
   formatSearchResults,

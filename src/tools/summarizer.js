@@ -1,4 +1,4 @@
-import { summarize, SUPPORTED_LANGUAGES } from "kagi-ken";
+import { summarize, SUPPORTED_LANGUAGES } from "../kagi/summarize.js";
 import { formatError, getEnvironmentConfig } from "../utils/formatting.js";
 import { z } from "zod";
 

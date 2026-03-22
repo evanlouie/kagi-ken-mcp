@@ -28,7 +28,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "kagi-ken": "github:evanlouie/kagi-ken",
+    "cheerio": "^1.1.2",
     "zod": "^3.22.0"
   },
   "repository": {
