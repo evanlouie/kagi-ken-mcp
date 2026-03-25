@@ -47,6 +47,11 @@ export interface SummarizeResponse {
   data: { output: string };
 }
 
+interface ParsedSummaryOutput {
+  output: string;
+  error?: string;
+}
+
 /** Summarizes a URL or text input using Kagi's streaming summarization endpoint. */
 export async function summarize(
   input: string,
@@ -108,7 +113,11 @@ export async function summarize(
     const streamData = await response.text();
     const parsedResponse = parseStreamingSummary(streamData);
 
-    const output = parsedResponse.output_data?.markdown ?? parsedResponse.md ?? "";
+    if (parsedResponse.error) {
+      throw new Error(parsedResponse.error);
+    }
+
+    const output = parsedResponse.output;
     return { data: { output } };
   } catch (error: unknown) {
     rethrowAsNetworkError(error);
@@ -116,17 +125,21 @@ export async function summarize(
 }
 
 const streamingSummarySchema = z.object({
+  state: z.string().optional(),
+  reply: z.string().optional(),
   output_data: z.object({ markdown: z.string().optional() }).optional(),
   md: z.string().optional(),
 });
 
-type StreamingSummaryResponse = z.infer<typeof streamingSummarySchema>;
+function parseStreamingSummary(streamData: string): ParsedSummaryOutput {
+  const messages = streamData
+    .split("\u0000")
+    .map((message) => message.trim())
+    .filter(Boolean);
 
-function parseStreamingSummary(streamData: string): StreamingSummaryResponse {
-  const lastNull = streamData.lastIndexOf("\u0000");
-  const lastMessage = (lastNull === -1 ? streamData : streamData.slice(lastNull + 1)).trim();
+  const lastMessage = messages.at(-1);
 
-  if (lastMessage === "") {
+  if (!lastMessage) {
     throw new Error("No summary data received");
   }
 
@@ -144,5 +157,15 @@ function parseStreamingSummary(streamData: string): StreamingSummaryResponse {
   if (!result.success) {
     throw new TypeError("Failed to parse summary response", { cause: result.error });
   }
-  return result.data;
+
+  if (result.data.state === "error") {
+    return { error: result.data.reply?.trim() || "Kagi could not generate a summary", output: "" };
+  }
+
+  const output = result.data.output_data?.markdown ?? result.data.md ?? "";
+  if (!output.trim()) {
+    throw new Error("Empty summary received");
+  }
+
+  return { output };
 }
