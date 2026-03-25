@@ -117,7 +117,10 @@ Disable Claude Code's built-in web search (optional) by setting the permission i
 {
   "permissions": {
     "deny": ["WebSearch"],
-    "allow": ["mcp__kagi-ken-mcp__kagi_search_fetch", "mcp__kagi-ken-mcp__kagi_summarizer"]
+    "allow": [
+      "mcp__kagi-ken-mcp__kagi_search_fetch",
+      "mcp__kagi-ken-mcp__kagi_summarizer"
+    ]
   }
 }
 ```
@@ -143,7 +146,8 @@ Summarize content from URLs using the Kagi Summarizer API. Supports various docu
 **Parameters:**
 
 - `url` (string): URL to summarize
-- `summary_type` (enum): `"summary"` for paragraph prose or `"takeaway"` for bullet points (default: `"summary"`)
+- `summary_type` (enum): `"keypoints"` for concise bullets, `"eli5"` for a simplified explanation, or `"article"` for a prose summary (default: `"article"`)
+- `summary_length` (enum, optional): Only used with `"article"`; one of `"headline"`, `"overview"`, `"digest"`, `"medium"`, or `"long"`
 - `target_language` (string, optional): Language code (e.g., `"EN"` for English, default: `"EN"`)
 
 ## Development

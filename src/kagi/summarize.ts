@@ -37,8 +37,23 @@ export const SUPPORTED_LANGUAGES = [
 export const supportedLanguageSchema = z.enum(SUPPORTED_LANGUAGES);
 export type SupportedLanguage = z.infer<typeof supportedLanguageSchema>;
 
+export const SUMMARY_TYPES = ["keypoints", "eli5", "article"] as const;
+export const summaryTypeSchema = z.enum(SUMMARY_TYPES);
+export type SummaryType = z.infer<typeof summaryTypeSchema>;
+
+export const ARTICLE_SUMMARY_LENGTHS = [
+  "headline",
+  "overview",
+  "digest",
+  "medium",
+  "long",
+] as const;
+export const articleSummaryLengthSchema = z.enum(ARTICLE_SUMMARY_LENGTHS);
+export type ArticleSummaryLength = z.infer<typeof articleSummaryLengthSchema>;
+
 export interface SummarizeOptions {
-  type?: "summary" | "takeaway";
+  type?: SummaryType;
+  summaryLength?: ArticleSummaryLength;
   language?: SupportedLanguage;
   isUrl?: boolean;
 }
@@ -66,7 +81,16 @@ export async function summarize(
     throw new Error("Session token is required and must be a string");
   }
 
-  const { type = "summary", language = "EN", isUrl = false } = options ?? {};
+  const {
+    type = "article",
+    summaryLength,
+    language = "EN",
+    isUrl = false,
+  } = options ?? {};
+
+  if (summaryLength && type !== "article") {
+    throw new Error("summaryLength is only supported when type is 'article'");
+  }
 
   try {
     const sharedHeaders = {
@@ -86,6 +110,9 @@ export async function summarize(
       url.searchParams.set("stream", "1");
       url.searchParams.set("target_language", language);
       url.searchParams.set("summary_type", type);
+      if (summaryLength) {
+        url.searchParams.set("summary_length", summaryLength);
+      }
 
       response = await fetch(url.toString(), {
         method: "GET",
@@ -97,6 +124,9 @@ export async function summarize(
       formData.set("stream", "1");
       formData.set("target_language", language);
       formData.set("summary_type", type);
+      if (summaryLength) {
+        formData.set("summary_length", summaryLength);
+      }
 
       response = await fetch("https://kagi.com/mother/summary_labs/", {
         method: "POST",
@@ -155,11 +185,16 @@ function parseStreamingSummary(streamData: string): ParsedSummaryOutput {
   const parsed: unknown = JSON.parse(jsonString);
   const result = streamingSummarySchema.safeParse(parsed);
   if (!result.success) {
-    throw new TypeError("Failed to parse summary response", { cause: result.error });
+    throw new TypeError("Failed to parse summary response", {
+      cause: result.error,
+    });
   }
 
   if (result.data.state === "error") {
-    return { error: result.data.reply?.trim() || "Kagi could not generate a summary", output: "" };
+    return {
+      error: result.data.reply?.trim() || "Kagi could not generate a summary",
+      output: "",
+    };
   }
 
   const output = result.data.output_data?.markdown ?? result.data.md ?? "";

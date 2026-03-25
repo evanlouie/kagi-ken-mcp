@@ -1,15 +1,27 @@
-import { summarize, supportedLanguageSchema, type SupportedLanguage } from "../kagi/summarize.ts";
+import {
+  articleSummaryLengthSchema,
+  summaryTypeSchema,
+  summarize,
+  supportedLanguageSchema,
+  type ArticleSummaryLength,
+  type SummaryType,
+  type SupportedLanguage,
+} from "../kagi/summarize.ts";
 import { formatError } from "../utils/formatting.ts";
 import { resolveToken } from "../utils/auth.ts";
 import { z } from "zod";
 
 export const summarizerInputSchema = {
   url: z.string().url().describe("A URL to a document to summarize."),
-  summary_type: z
-    .enum(["summary", "takeaway"])
-    .default("summary")
+  summary_type: summaryTypeSchema
+    .default("article")
     .describe(
-      "Type of summary to produce. Options are 'summary' for paragraph prose and 'takeaway' for a bulleted list of key points.",
+      "Type of summary to produce. Options are 'keypoints' for concise bullets, 'eli5' for a simplified explanation, and 'article' for a prose summary.",
+    ),
+  summary_length: articleSummaryLengthSchema
+    .optional()
+    .describe(
+      "Optional length for 'article' summaries. Options are 'headline', 'overview', 'digest', 'medium', and 'long'.",
     ),
   target_language: supportedLanguageSchema
     .optional()
@@ -21,11 +33,13 @@ export const summarizerInputSchema = {
 /** MCP tool handler that summarizes a URL using Kagi's summarizer with configurable type and language. */
 export async function kagiSummarizer({
   url,
-  summary_type = "summary",
+  summary_type,
+  summary_length,
   target_language,
 }: {
   url: string;
-  summary_type?: "summary" | "takeaway";
+  summary_type?: SummaryType;
+  summary_length?: ArticleSummaryLength;
   target_language?: SupportedLanguage;
 }) {
   try {
@@ -33,7 +47,8 @@ export async function kagiSummarizer({
 
     const result = await summarize(url, token, {
       type: summary_type,
-      language: target_language ?? "EN",
+      summaryLength: summary_length,
+      language: target_language,
       isUrl: true,
     });
 
