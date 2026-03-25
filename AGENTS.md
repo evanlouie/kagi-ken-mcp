@@ -7,15 +7,15 @@ This file provides guidance to LLM agents when working with code in this reposit
 ### Development
 
 ```bash
-npm install          # Install dependencies
-npm start           # Run the MCP server
-npm run dev         # Run with Node.js inspector for debugging
+bun install         # Install dependencies
+bun start           # Run the MCP server
+bun run dev         # Run with Bun inspector for debugging
 ```
 
 ### Testing & Debugging
 
 ```bash
-npx @modelcontextprotocol/inspector node src/index.js    # Launch MCP Inspector at localhost:5173
+bunx @modelcontextprotocol/inspector bun src/index.ts    # Launch MCP Inspector at localhost:5173
 ```
 
 ## Architecture Overview
@@ -24,7 +24,7 @@ This is a **Model Context Protocol (MCP) server** that provides Kagi search and 
 
 ### Core Architecture Pattern
 
-**MCP Server Structure**: The main server (`src/index.js`) uses the `@modelcontextprotocol/sdk` to create an MCP server that registers tools and handles communication via stdio transport.
+**MCP Server Structure**: The main server (`src/index.ts`) uses the `@modelcontextprotocol/sdk` to create an MCP server that registers tools and handles communication via stdio transport.
 
 **Tool-Based Architecture**: Each capability is implemented as a separate MCP tool:
 
@@ -38,7 +38,7 @@ This is a **Model Context Protocol (MCP) server** that provides Kagi search and 
 
 ### Key Components
 
-**`src/index.js`** - Main server class that:
+**`src/index.ts`** - Main server class that:
 
 - Creates McpServer instance
 - Registers tools with Zod schemas for input validation
@@ -50,13 +50,13 @@ This is a **Model Context Protocol (MCP) server** that provides Kagi search and 
 - Handlers return MCP-compliant response format with `content` array
 - Input validation uses direct Zod schema objects (not `z.object()`)
 
-**`src/utils/auth.js`** - Token resolution that mirrors `kagi-ken-cli`:
+**`src/utils/auth.ts`** - Token resolution that mirrors `kagi-ken-cli`:
 
 - `resolveToken()` - Priority-based token resolution
 - `readTokenFromFile()` - File-based token reading
 - Comprehensive error messages for missing tokens
 
-**`src/utils/formatting.js`** - Result formatting:
+**`src/utils/formatting.ts`** - Result formatting:
 
 - `formatSearchResults()` - Matches official Kagi MCP output format
 - `getEnvironmentConfig()` - Unified config with token resolution
@@ -84,7 +84,7 @@ export const schema = z.object({
 ## Dependencies
 
 - `@modelcontextprotocol/sdk` - MCP server implementation
-- `kagi-ken` - Kagi API client (GitHub dependency, not npm)
+- `kagi-ken` - Kagi API client (GitHub dependency)
 - `zod` - Input validation schemas
 
 ## Configuration

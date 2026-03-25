@@ -1,6 +1,6 @@
 import type { SearchResponse } from "../kagi/search.ts";
 
-/** Type guard that checks if an error is a Node.js ErrnoException (has a `code` property). */
+/** Type guard that checks if an error is an ErrnoException-style error (has a `code` property). */
 export function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }

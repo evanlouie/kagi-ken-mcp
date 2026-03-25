@@ -10,15 +10,15 @@
     "search",
     "summarizer"
   ],
-  "homepage": "https://github.com/czottmann/kagi-ken-mcp#readme",
+  "homepage": "https://github.com/evanlouie/kagi-ken-mcp#readme",
   "bugs": {
-    "url": "https://github.com/czottmann/kagi-ken-mcp/issues"
+    "url": "https://github.com/evanlouie/kagi-ken-mcp/issues"
   },
   "license": "MIT",
   "author": "Carlo Zottmann <carlo@zottmann.dev>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/czottmann/kagi-ken-mcp.git"
+    "url": "git+https://github.com/evanlouie/kagi-ken-mcp.git"
   },
   "bin": {
     "kagi-ken-mcp": "src/index.ts"

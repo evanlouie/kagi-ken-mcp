@@ -1,6 +1,6 @@
 # kagi-ken-mcp
 
-A lightweight Node MCP server around the [`kagi-ken` package](https://github.com/czottmann/kagi-ken), providing access to Kagi.com services using Kagi session tokens:
+A lightweight Bun MCP server around the [`kagi-ken` package](https://github.com/czottmann/kagi-ken), providing access to Kagi.com services using Kagi session tokens:
 
 - **Search**: Searches Kagi
 - **Summarizer**: Uses Kagi's Summarizer to create summaries from URLs or text content
@@ -30,13 +30,13 @@ It includes comprehensive error handling:
 - Environment variable validation
 - Graceful error formatting
 
-<a href="https://glama.ai/mcp/servers/@czottmann/kagi-ken-mcp">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@czottmann/kagi-ken-mcp/badge" alt="kagi-kan-mcp MCP server" />
+<a href="https://glama.ai/mcp/servers/@evanlouie/kagi-ken-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@evanlouie/kagi-ken-mcp/badge" alt="kagi-kan-mcp MCP server" />
 </a>
 
 ## Installation
 
-Node.js 22+ is required.
+Bun is required.
 
 ### 1. Get Kagi Session Token
 
@@ -60,8 +60,8 @@ Add kagi-ken-mcp to your `claude_desktop_config.json` which you can open from th
 {
   "mcpServers": {
     "kagi-ken-mcp": {
-      "command": "npx",
-      "args": ["-y", "github:czottmann/kagi-ken-mcp"]
+      "command": "bunx",
+      "args": ["github:evanlouie/kagi-ken-mcp"]
     }
   }
 }
@@ -73,8 +73,8 @@ Add kagi-ken-mcp to your `claude_desktop_config.json` which you can open from th
 {
   "mcpServers": {
     "kagi-ken-mcp": {
-      "command": "npx",
-      "args": ["-y", "github:czottmann/kagi-ken-mcp"],
+      "command": "bunx",
+      "args": ["github:evanlouie/kagi-ken-mcp"],
       "env": {
         "KAGI_SESSION_TOKEN": "YOUR_SESSION_TOKEN_HERE"
       }
@@ -97,7 +97,7 @@ For summarizing a URL, use the kagi-ken-mcp MCP server's `kagi_summarizer` tool.
 #### Option 1: Using token file (recommended)
 
 ```bash
-claude mcp add kagi-ken-mcp --scope user -- npx -y github:czottmann/kagi-ken-mcp
+claude mcp add kagi-ken-mcp --scope user -- bunx github:evanlouie/kagi-ken-mcp
 ```
 
 #### Option 2: Using environment variable
@@ -106,7 +106,7 @@ claude mcp add kagi-ken-mcp --scope user -- npx -y github:czottmann/kagi-ken-mcp
 claude mcp add kagi-ken-mcp \
   --scope user \
   --env KAGI_SESSION_TOKEN="YOUR_SESSION_TOKEN_HERE" -- \
-  npx -y github:czottmann/kagi-ken-mcp
+  bunx github:evanlouie/kagi-ken-mcp
 ```
 
 #### Post-install
@@ -157,12 +157,12 @@ Summarize content from URLs using the Kagi Summarizer API. Supports various docu
 ```
 kagi-ken-mcp/
 ├── src/
-│   ├── index.js              # Main server entry point
+│   ├── index.ts              # Main server entry point
 │   ├── tools/
-│   │   ├── search.js         # Search tool implementation
-│   │   └── summarizer.js     # Summarizer tool implementation
+│   │   ├── search.ts         # Search tool implementation
+│   │   └── summarizer.ts     # Summarizer tool implementation
 │   └── utils/
-│       └── formatting.js     # Utility functions
+│       └── formatting.ts     # Utility functions
 ├── package.json
 └── README.md
 ```
@@ -178,13 +178,13 @@ kagi-ken-mcp/
 
 2. **Install dependencies:**
    ```bash
-   npm install
+   bun install
    ```
 
 ### Running in Development Mode
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 ### Debugging
@@ -192,7 +192,7 @@ npm run dev
 Use the MCP Inspector to debug:
 
 ```bash
-npx @modelcontextprotocol/inspector node ./src/index.js
+bunx @modelcontextprotocol/inspector bun ./src/index.ts
 ```
 
 Then access the inspector at `http://localhost:5173`. If using environment variables, add your `KAGI_SESSION_TOKEN` in the environment variables section of the inspector.
