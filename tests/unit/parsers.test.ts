@@ -4,6 +4,7 @@ import { z } from "zod";
 import { search, __testing as searchTesting } from "../../src/kagi/search.ts";
 import { summarize, __testing as summarizeTesting } from "../../src/kagi/summarize.ts";
 import { searchInputSchema } from "../../src/tools/search.ts";
+import { formatSearchResults } from "../../src/utils/formatting.ts";
 
 const searchSchema = z.object(searchInputSchema);
 
@@ -27,6 +28,61 @@ describe("search parser", () => {
     expect(results._unsafeUnwrap()).toEqual([
       { t: 0, url: "https://example.com/a", title: "Example A", snippet: "Snippet A" },
     ]);
+  });
+
+  test("extracts published dates from Kagi result metadata", () => {
+    const results = searchTesting.parseSearchResults(
+      `<html><body>
+        <div class="search-result">
+          <a class="__sri_title_link" href="https://example.com/a">Example A</a>
+          <div class="__sri-desc">
+            <span class="__sri-time --new">Today</span>
+            Snippet A
+          </div>
+        </div>
+        <div class="search-result">
+          <a class="__sri_title_link" href="https://example.com/b">Example B</a>
+          <div class="__sri-desc">Apr 22, 2026 Snippet B</div>
+        </div>
+      </body></html>`,
+      2,
+    );
+
+    expect(results.isOk()).toBe(true);
+    expect(results._unsafeUnwrap()).toEqual([
+      {
+        t: 0,
+        url: "https://example.com/a",
+        title: "Example A",
+        snippet: "Snippet A",
+        publishedDate: "Today",
+      },
+      {
+        t: 0,
+        url: "https://example.com/b",
+        title: "Example B",
+        snippet: "Snippet B",
+        publishedDate: "Apr 22, 2026",
+      },
+    ]);
+  });
+
+  test("formats search results with published dates", () => {
+    expect(
+      formatSearchResults(["example"], [
+        {
+          data: [
+            {
+              t: 0,
+              url: "https://example.com/a",
+              title: "Example A",
+              snippet: "Snippet A",
+              publishedDate: "Today",
+            },
+          ],
+        },
+      ]),
+    ).toContain("Published Date: Today");
   });
 
   test("parses valid no-results pages as empty results", () => {

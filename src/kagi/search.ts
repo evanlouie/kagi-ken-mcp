@@ -21,6 +21,7 @@ export interface SearchResult {
   url: string;
   title: string;
   snippet: string;
+  publishedDate?: string;
 }
 
 export interface SearchResponse {
@@ -158,21 +159,56 @@ function parseSearchResults(html: string, limit: number): Result<SearchResult[],
   }
 }
 
+const normalizeText = (value: string): string => value.replaceAll(/\s+/g, " ").trim();
+
+const leadingPublishedDatePattern =
+  /^(Today|Yesterday|\d+\s+(?:minutes?|hours?|days?|weeks?|months?|years?)\s+ago|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{1,2},\s+\d{4}|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}|\d{4}-\d{2}-\d{2})\b/i;
+
+function extractPublishedDateAndSnippet($description: cheerio.Cheerio<AnyNode>): {
+  publishedDate?: string;
+  snippet: string;
+} {
+  const spanDate = normalizeText($description.find(".__sri-time").first().text());
+  const snippetWithoutDate = normalizeText(
+    $description.clone().find(".__sri-time").remove().end().text(),
+  );
+
+  if (spanDate !== "") return { publishedDate: spanDate, snippet: snippetWithoutDate };
+
+  const snippet = normalizeText($description.text());
+  const leadingDate = snippet.match(leadingPublishedDatePattern)?.[0];
+
+  return match(leadingDate)
+    .with(undefined, () => ({ snippet }))
+    .otherwise((publishedDate) => ({
+      publishedDate,
+      snippet: normalizeText(snippet.slice(publishedDate.length)),
+    }));
+}
+
 function extractResult(
   $element: cheerio.Cheerio<AnyNode>,
   titleLink: cheerio.Cheerio<AnyNode>,
 ): SearchResult | null {
   try {
-    const title = titleLink.text().trim();
+    const title = normalizeText(titleLink.text());
     const url = titleLink.attr("href");
-    const snippet = $element.find(".__sri-desc").text().trim();
+    const { publishedDate, snippet } = extractPublishedDateAndSnippet(
+      $element.find(".__sri-desc").first(),
+    );
 
     return match({ title, url })
       .when(
         ({ title, url }) => title === "" || url === undefined || url === "",
         () => null,
       )
-      .otherwise(({ title, url }) => ({ t: 0 as const, url: url!, title, snippet: snippet || "" }));
+      .otherwise(({ title, url }) => ({
+        t: 0 as const,
+        url: url!,
+        title,
+        snippet,
+        ...(publishedDate === undefined ? {} : { publishedDate }),
+      }));
   } catch {
     return null;
   }

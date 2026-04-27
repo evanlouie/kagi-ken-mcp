@@ -1,9 +1,15 @@
 import type { SearchResponse } from "../kagi/search.ts";
 
-const resultTemplate = (resultNumber: number, title: string, url: string, snippet: string) =>
+const resultTemplate = (
+  resultNumber: number,
+  title: string,
+  url: string,
+  snippet: string,
+  publishedDate: string = "Not Available",
+) =>
   `${resultNumber}: ${title}
 ${url}
-Published Date: Not Available
+Published Date: ${publishedDate}
 ${snippet}`;
 
 const queryResponseTemplate = (query: string, formattedSearchResults: string) =>
@@ -25,6 +31,7 @@ export function formatSearchResults(queries: string[], responses: SearchResponse
             result.title ?? "No Title",
             result.url ?? "",
             result.snippet ?? "No snippet available",
+            result.publishedDate,
           ),
         )
         .join("\n\n");
