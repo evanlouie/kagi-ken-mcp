@@ -1,4 +1,4 @@
-import { err, ok, type Result } from "neverthrow";
+import type { Result } from "neverthrow";
 import { z } from "zod";
 
 import {
@@ -35,11 +35,9 @@ export const summarizerInputSchema = {
     ),
 };
 
-function textContent(text: string) {
-  return {
-    content: [{ type: "text" as const, text }],
-  };
-}
+const textContent = (text: string) => ({
+  content: [{ type: "text" as const, text }],
+});
 
 export async function runSummarizer({
   url,
@@ -52,31 +50,23 @@ export async function runSummarizer({
   summary_length?: ArticleSummaryLength;
   target_language?: SupportedLanguage;
 }): Promise<Result<string, AppError>> {
-  const tokenResult = resolveToken();
-  if (tokenResult.isErr()) {
-    return err(tokenResult.error);
-  }
-
-  const result = await withTimeout(
-    (signal) =>
-      summarize(
-        url,
-        tokenResult.value,
-        {
-          type: summary_type,
-          summaryLength: summary_length,
-          language: target_language,
-          isUrl: true,
-        },
-        { signal },
-      ),
-    SUMMARY_TIMEOUT_MS,
-    "Summarizer timeout",
-  );
-
-  return result.match(
-    (summary) => ok(summary.data.output),
-    (error) => err(error),
+  return await resolveToken().asyncAndThen((token) =>
+    withTimeout(
+      (signal) =>
+        summarize(
+          url,
+          token,
+          {
+            type: summary_type,
+            summaryLength: summary_length,
+            language: target_language,
+            isUrl: true,
+          },
+          { signal },
+        ),
+      SUMMARY_TIMEOUT_MS,
+      "Summarizer timeout",
+    ).map((summary) => summary.data.output),
   );
 }
 

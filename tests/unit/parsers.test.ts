@@ -39,6 +39,34 @@ describe("search parser", () => {
     expect(results._unsafeUnwrap()).toEqual([]);
   });
 
+  test("fills remaining search limit from grouped results", () => {
+    const results = searchTesting.parseSearchResults(
+      `<html><body>
+        <div class="search-result">
+          <a class="__sri_title_link" href="https://example.com/a">Example A</a>
+          <div class="__sri-desc">Snippet A</div>
+        </div>
+        <div class="sr-group">
+          <div class="__srgi">
+            <div class="__srgi-title"><a href="https://example.com/b">Example B</a></div>
+            <div class="__sri-desc">Snippet B</div>
+          </div>
+          <div class="__srgi">
+            <div class="__srgi-title"><a href="https://example.com/c">Example C</a></div>
+            <div class="__sri-desc">Snippet C</div>
+          </div>
+        </div>
+      </body></html>`,
+      2,
+    );
+
+    expect(results.isOk()).toBe(true);
+    expect(results._unsafeUnwrap()).toEqual([
+      { t: 0, url: "https://example.com/a", title: "Example A", snippet: "Snippet A" },
+      { t: 0, url: "https://example.com/b", title: "Example B", snippet: "Snippet B" },
+    ]);
+  });
+
   test("returns ParseError on unexpected HTML", () => {
     const result = searchTesting.parseSearchResults("<html><body>login shell</body></html>", 10);
     expect(result.isErr()).toBe(true);

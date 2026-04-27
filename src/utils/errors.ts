@@ -1,3 +1,5 @@
+import { match, P } from "ts-pattern";
+
 export type AppError =
   | { type: "AuthError"; message: string; cause?: unknown }
   | { type: "TokenFileError"; message: string; cause?: unknown }
@@ -12,17 +14,44 @@ export type AppError =
 
 /** Type guard that checks if an error is an ErrnoException-style error (has a `code` property). */
 export function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
+  return match(error)
+    .when(
+      (error): error is NodeJS.ErrnoException => error instanceof Error && "code" in error,
+      () => true,
+    )
+    .otherwise(() => false);
 }
 
-/** Extracts a message string from an unknown error, falling back to `String()` for non-Error values. */
-export function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    return typeof message === "string" ? message : String(message);
+const stringifyObject = (value: unknown): string => {
+  try {
+    return JSON.stringify(value) ?? Object.prototype.toString.call(value);
+  } catch {
+    return Object.prototype.toString.call(value);
   }
-  return String(error);
+};
+
+const stringifyUnknown = (value: unknown): string =>
+  match(value)
+    .with(P.string, (value) => value)
+    .with(P.number, (value) => `${value}`)
+    .with(P.boolean, (value) => `${value}`)
+    .with(P.bigint, (value) => `${value}`)
+    .when(
+      (value): value is symbol => typeof value === "symbol",
+      (value) => value.description ?? value.toString(),
+    )
+    .otherwise(stringifyObject);
+
+/** Extracts a message string from an unknown error, falling back to a stringified unknown value. */
+export function errorMessage(error: unknown): string {
+  return match(error)
+    .with(P.instanceOf(Error), ({ message }) => message)
+    .with({ message: P.select(P.string) }, (message) => message)
+    .with(
+      { message: P.select(P.when((message) => message !== undefined && message !== null)) },
+      stringifyUnknown,
+    )
+    .otherwise(stringifyUnknown);
 }
 
 /** Converts an unknown error into a typed unexpected error. */
@@ -36,7 +65,9 @@ export function toUnexpectedError(error: unknown): AppError {
 
 /** Formats a typed application error into a user-facing "Error: ..." string. */
 export function formatAppError(error: AppError): string {
-  return `Error: ${error.message || "Unknown error occurred"}`;
+  return match(error.message)
+    .with(P.string.minLength(1), (message) => `Error: ${message}`)
+    .otherwise(() => "Error: Unknown error occurred");
 }
 
 /** Formats an unknown error into a user-facing "Error: ..." string. */

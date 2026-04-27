@@ -1,3 +1,5 @@
+import { match } from "ts-pattern";
+
 import pkg from "../../package.json";
 
 const { version } = pkg;
@@ -68,15 +70,9 @@ The server exposes the MCP tools:
 }
 
 export function commandHelp(topic?: string): string {
-  switch (topic) {
-    case "search":
-      return searchHelp();
-    case "summarize":
-    case "summary":
-      return summarizeHelp();
-    case "mcp":
-      return mcpHelp();
-    default:
-      return generalHelp();
-  }
+  return match(topic)
+    .with("search", () => searchHelp())
+    .with("summarize", "summary", () => summarizeHelp())
+    .with("mcp", () => mcpHelp())
+    .otherwise(() => generalHelp());
 }

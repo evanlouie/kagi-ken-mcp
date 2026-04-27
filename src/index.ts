@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+import { match } from "ts-pattern";
+
 import pkg from "../package.json";
 import { commandHelp, generalHelp } from "./cli/help.ts";
 import { parseCliArgs, type CliCommand } from "./cli/parser.ts";
@@ -10,24 +12,22 @@ import { formatAppError, formatUnknownError } from "./utils/errors.ts";
 
 const { version } = pkg;
 
-function printStdout(text: string) {
-  process.stdout.write(`${text}\n`);
-}
+const printStdout = (text: string) => process.stdout.write(`${text}\n`);
 
-function printStderr(text: string) {
-  process.stderr.write(`${text}\n`);
-}
+const printStderr = (text: string) => process.stderr.write(`${text}\n`);
 
 async function runCommand(command: CliCommand): Promise<number> {
-  switch (command.type) {
-    case "help":
-      printStdout(commandHelp(command.topic));
-      return command.exitCode;
-    case "version":
+  return await match<CliCommand, Promise<number>>(command)
+    .with({ type: "help" }, async ({ topic, exitCode }) => {
+      printStdout(commandHelp(topic));
+      return exitCode;
+    })
+    .with({ type: "version" }, async () => {
       printStdout(version);
       return 0;
-    case "search": {
-      const result = await runSearch({ queries: command.queries, limit: command.limit });
+    })
+    .with({ type: "search" }, async ({ queries, limit }) => {
+      const result = await runSearch({ queries, limit });
       return result.match(
         (text) => {
           printStdout(text);
@@ -38,13 +38,13 @@ async function runCommand(command: CliCommand): Promise<number> {
           return 1;
         },
       );
-    }
-    case "summarize": {
+    })
+    .with({ type: "summarize" }, async ({ url, summary_type, summary_length, target_language }) => {
       const result = await runSummarizer({
-        url: command.url,
-        summary_type: command.summary_type,
-        summary_length: command.summary_length,
-        target_language: command.target_language,
+        url,
+        summary_type,
+        summary_length,
+        target_language,
       });
       return result.match(
         (text) => {
@@ -56,8 +56,8 @@ async function runCommand(command: CliCommand): Promise<number> {
           return 1;
         },
       );
-    }
-    case "mcp": {
+    })
+    .with({ type: "mcp" }, async () => {
       const result = await startMcpServer();
       return result.match(
         () => 0,
@@ -66,20 +66,20 @@ async function runCommand(command: CliCommand): Promise<number> {
           return 1;
         },
       );
-    }
-  }
+    })
+    .exhaustive();
 }
 
 async function main(args: string[]): Promise<number> {
-  const commandResult = parseCliArgs(args);
-  if (commandResult.isErr()) {
-    printStderr(formatAppError(commandResult.error));
-    printStderr("");
-    printStderr(generalHelp());
-    return 2;
-  }
-
-  return runCommand(commandResult.value);
+  return await parseCliArgs(args).match(
+    (command) => runCommand(command),
+    (error) => {
+      printStderr(formatAppError(error));
+      printStderr("");
+      printStderr(generalHelp());
+      return 2;
+    },
+  );
 }
 
 process.on("uncaughtException", (error) => {

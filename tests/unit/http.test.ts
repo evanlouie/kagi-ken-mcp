@@ -65,6 +65,19 @@ describe("Kagi HTTP response helpers", () => {
     });
   });
 
+  test("short-circuits challenge URLs before inspecting response body", () => {
+    const body = {
+      toLowerCase() {
+        throw new Error("body should not be inspected");
+      },
+    } as unknown as string;
+
+    const result = checkNotAuthOrChallengeResponse(responseWithUrl("https://kagi.com/turnstile"), body);
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toMatchObject({ type: "KagiChallengeError" });
+  });
+
   test("detects HTML documents", () => {
     expect(isHtmlDocument("<!DOCTYPE html><html></html>")).toBe(true);
     expect(isHtmlDocument('{"state":"done"}')).toBe(false);

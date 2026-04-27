@@ -61,6 +61,24 @@ describe("CLI parser", () => {
     });
   });
 
+  test("parses inline summarize aliases once into typed values", () => {
+    const result = parseCliArgs([
+      "summary",
+      "https://example.com/article",
+      "--summary-type=article",
+      "--target-language=EN",
+    ]);
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toEqual({
+      type: "summarize",
+      url: "https://example.com/article",
+      summary_type: "article",
+      summary_length: undefined,
+      target_language: "EN",
+    });
+  });
+
   test("rejects invalid summarize invocations", () => {
     const missingUrl = parseCliArgs(["summarize"]);
     expect(missingUrl.isErr()).toBe(true);

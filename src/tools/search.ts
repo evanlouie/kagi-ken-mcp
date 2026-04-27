@@ -1,4 +1,5 @@
-import { err, ok, type Result } from "neverthrow";
+import { err, ok, ResultAsync, type Result } from "neverthrow";
+import { match } from "ts-pattern";
 import { z } from "zod";
 
 import { search, type SearchResponse } from "../kagi/search.ts";
@@ -27,30 +28,80 @@ export const searchInputSchema = {
     .describe("Maximum number of search results per query (default: 10, max: 50)"),
 };
 
-function textContent(text: string) {
-  return {
-    content: [{ type: "text" as const, text }],
-  };
-}
+const textContent = (text: string) => ({
+  content: [{ type: "text" as const, text }],
+});
 
 function normalizeQueries(queries: string[]): Result<string[], AppError> {
   const normalizedQueries = queries.map((query) => query.trim());
 
-  if (normalizedQueries.length === 0 || normalizedQueries.some((query) => query === "")) {
-    return err({
-      type: "ValidationError",
-      message: "At least one non-empty search query is required",
-    });
-  }
+  return match(normalizedQueries)
+    .when(
+      (queries) => queries.length === 0 || queries.some((query) => query === ""),
+      () =>
+        err({
+          type: "ValidationError" as const,
+          message: "At least one non-empty search query is required",
+        }),
+    )
+    .when(
+      (queries) => queries.length > MAX_QUERIES,
+      () =>
+        err({
+          type: "ValidationError" as const,
+          message: `At most ${MAX_QUERIES} search queries are allowed`,
+        }),
+    )
+    .otherwise((queries) => ok(queries));
+}
 
-  if (normalizedQueries.length > MAX_QUERIES) {
-    return err({
-      type: "ValidationError",
-      message: `At most ${MAX_QUERIES} search queries are allowed`,
-    });
-  }
+function searchAll({
+  token,
+  queries,
+  limit,
+}: {
+  token: string;
+  queries: string[];
+  limit: number;
+}): ResultAsync<string, AppError> {
+  return new ResultAsync(
+    (async () => {
+      const results = await Promise.all(
+        queries.map((query) =>
+          withTimeout(
+            (signal) => search(query, token, limit, { signal }),
+            SEARCH_TIMEOUT_MS,
+            "Search timeout",
+          ),
+        ),
+      );
 
-  return ok(normalizedQueries);
+      const { responses, errors } = results.reduce(
+        (acc, result, index) =>
+          result.match(
+            (response) => {
+              acc.responses.push(response);
+              return acc;
+            },
+            (error) => {
+              acc.responses.push({ data: [] });
+              acc.errors.push(`Query "${queries[index] ?? ""}": ${errorMessage(error)}`);
+              return acc;
+            },
+          ),
+        { responses: [] as SearchResponse[], errors: [] as string[] },
+      );
+
+      return ok(
+        match(errors.length)
+          .with(0, () => formatSearchResults(queries, responses))
+          .otherwise(
+            () =>
+              `${formatSearchResults(queries, responses)}\n\nErrors encountered:\n${errors.join("\n")}`,
+          ),
+      );
+    })(),
+  );
 }
 
 export async function runSearch({
@@ -60,49 +111,9 @@ export async function runSearch({
   queries: string[];
   limit?: number;
 }): Promise<Result<string, AppError>> {
-  const tokenResult = resolveToken();
-  if (tokenResult.isErr()) {
-    return err(tokenResult.error);
-  }
-
-  const normalizedQueriesResult = normalizeQueries(queries);
-  if (normalizedQueriesResult.isErr()) {
-    return err(normalizedQueriesResult.error);
-  }
-
-  const token = tokenResult.value;
-  const normalizedQueries = normalizedQueriesResult.value;
-  const results = await Promise.all(
-    normalizedQueries.map((query) =>
-      withTimeout(
-        (signal) => search(query, token, limit, { signal }),
-        SEARCH_TIMEOUT_MS,
-        "Search timeout",
-      ),
-    ),
-  );
-
-  const responses: SearchResponse[] = [];
-  const errors: string[] = [];
-
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i]!;
-    if (result.isOk()) {
-      responses.push(result.value);
-    } else {
-      errors.push(`Query "${normalizedQueries[i]}": ${errorMessage(result.error)}`);
-      responses.push({ data: [] });
-    }
-  }
-
-  const formattedResults = formatSearchResults(normalizedQueries, responses);
-
-  let finalResponse = formattedResults;
-  if (errors.length > 0) {
-    finalResponse += "\n\nErrors encountered:\n" + errors.join("\n");
-  }
-
-  return ok(finalResponse);
+  return await resolveToken()
+    .andThen((token) => normalizeQueries(queries).map((queries) => ({ token, queries, limit })))
+    .asyncAndThen(searchAll);
 }
 
 /** MCP tool handler that runs concurrent Kagi searches with per-query timeouts and returns formatted results. */

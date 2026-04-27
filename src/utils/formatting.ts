@@ -14,29 +14,27 @@ ${formattedSearchResults}`;
 
 /** Formats search results from multiple queries into numbered, human-readable text matching the Kagi MCP output format. */
 export function formatSearchResults(queries: string[], responses: SearchResponse[]): string {
-  const perQueryResponseStrs: string[] = [];
-  let startIndex = 1;
+  const { chunks } = queries.reduce(
+    (acc, query, queryIndex) => {
+      const results = responses[queryIndex]?.data ?? [];
+      const base = acc.nextResultNumber;
+      const formattedResults = results
+        .map((result, index) =>
+          resultTemplate(
+            base + index,
+            result.title ?? "No Title",
+            result.url ?? "",
+            result.snippet ?? "No snippet available",
+          ),
+        )
+        .join("\n\n");
 
-  for (let i = 0; i < queries.length; i++) {
-    const query = queries[i]!;
-    const results = responses[i]?.data ?? [];
+      acc.nextResultNumber += results.length;
+      acc.chunks.push(queryResponseTemplate(query, formattedResults));
+      return acc;
+    },
+    { nextResultNumber: 1, chunks: [] as string[] },
+  );
 
-    const base = startIndex;
-    const formattedResultsList = results.map((result, index) =>
-      resultTemplate(
-        base + index,
-        result.title ?? "No Title",
-        result.url ?? "",
-        result.snippet ?? "No snippet available",
-      ),
-    );
-
-    startIndex += results.length;
-
-    const formattedResultsStr = formattedResultsList.join("\n\n");
-    const queryResponseStr = queryResponseTemplate(query, formattedResultsStr);
-    perQueryResponseStrs.push(queryResponseStr);
-  }
-
-  return perQueryResponseStrs.join("\n\n");
+  return chunks.join("\n\n");
 }

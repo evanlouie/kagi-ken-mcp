@@ -1,4 +1,5 @@
 import { err, ok, type Result } from "neverthrow";
+import { match, P } from "ts-pattern";
 
 import {
   ARTICLE_SUMMARY_LENGTHS,
@@ -23,29 +24,103 @@ export type CliCommand =
     }
   | { type: "mcp" };
 
-function usageError(message: string): AppError {
-  return { type: "ValidationError", message };
+type ParseStep<State> =
+  | { type: "continue"; state: State; nextIndex: number }
+  | { type: "done"; command: CliCommand };
+
+interface SearchState {
+  queries: string[];
+  limit?: number;
 }
 
-function isHelpFlag(arg: string): boolean {
-  return arg === "--help" || arg === "-h";
+interface SummarizeState {
+  urls: string[];
+  summary_type?: SummaryType;
+  summary_length?: ArticleSummaryLength;
+  target_language?: SupportedLanguage;
 }
 
-function isVersionFlag(arg: string): boolean {
-  return arg === "--version" || arg === "-v";
+const summaryTypeFlags = ["--type", "--summary-type"] as const;
+const languageFlags = ["--language", "--target-language"] as const;
+
+const usageError = (message: string): AppError => ({ type: "ValidationError", message });
+
+const isHelpFlag = (arg: string): boolean => arg === "--help" || arg === "-h";
+
+const continueWith = <State>(state: State, nextIndex: number): ParseStep<State> => ({
+  type: "continue",
+  state,
+  nextIndex,
+});
+
+const doneWith = <State>(command: CliCommand): ParseStep<State> => ({
+  type: "done",
+  command,
+});
+
+function consumeArgs<State>(
+  args: string[],
+  initialState: State,
+  consume: (input: {
+    arg: string;
+    index: number;
+    state: State;
+    args: string[];
+  }) => Result<ParseStep<State>, AppError>,
+  finalize: (state: State) => Result<CliCommand, AppError>,
+): Result<CliCommand, AppError> {
+  let index = 0;
+  let state = initialState;
+
+  while (true) {
+    const arg = args[index];
+    if (arg === undefined) return finalize(state);
+
+    const stepResult = consume({ arg, index, state, args });
+    if (stepResult.isErr()) return err(stepResult.error);
+
+    const outcome = match(stepResult.value)
+      .with({ type: "done" }, ({ command }) => ({ type: "return" as const, command }))
+      .with({ type: "continue" }, ({ state, nextIndex }) => ({
+        type: "next" as const,
+        state,
+        index: nextIndex,
+      }))
+      .exhaustive();
+
+    if (outcome.type === "return") return ok(outcome.command);
+
+    state = outcome.state;
+    index = outcome.index;
+  }
 }
 
 function parseInteger(value: string, flag: string): Result<number, AppError> {
-  if (!/^\d+$/.test(value)) {
-    return err(usageError(`${flag} must be an integer`));
-  }
-
-  return ok(Number.parseInt(value, 10));
+  return match(value)
+    .with(P.string.regex(/^\d+$/), (numericValue) => ok(Number.parseInt(numericValue, 10)))
+    .otherwise(() => err(usageError(`${flag} must be an integer`)));
 }
 
 function valueForInlineFlag(arg: string, flag: string): string | undefined {
   const prefix = `${flag}=`;
-  return arg.startsWith(prefix) ? arg.slice(prefix.length) : undefined;
+  return match(arg.startsWith(prefix))
+    .with(true, () => arg.slice(prefix.length))
+    .with(false, () => undefined)
+    .exhaustive();
+}
+
+function valueForInlineFlags(
+  arg: string,
+  flags: readonly string[],
+): { flag: string; value: string } | undefined {
+  return flags.reduce<{ flag: string; value: string } | undefined>(
+    (matched, flag) =>
+      matched ??
+      match(valueForInlineFlag(arg, flag))
+        .with(P.string, (value) => ({ flag, value }))
+        .otherwise(() => undefined),
+    undefined,
+  );
 }
 
 function takeFlagValue(
@@ -54,12 +129,22 @@ function takeFlagValue(
   flag: string,
 ): Result<[string, number], AppError> {
   const nextIndex = index + 1;
-  const value = args[nextIndex];
-  if (value === undefined || value.startsWith("-")) {
-    return err(usageError(`${flag} requires a value`));
-  }
 
-  return ok([value, nextIndex]);
+  return match(args[nextIndex])
+    .with(P.string.startsWith("-"), () => err(usageError(`${flag} requires a value`)))
+    .with(P.string, (value) => ok([value, nextIndex] as [string, number]))
+    .otherwise(() => err(usageError(`${flag} requires a value`)));
+}
+
+function takeParsedFlagValue<T>(
+  args: string[],
+  index: number,
+  flag: string,
+  parse: (value: string) => Result<T, AppError>,
+): Result<{ value: T; nextIndex: number }, AppError> {
+  return takeFlagValue(args, index, flag).andThen(([rawValue, nextIndex]) =>
+    parse(rawValue).map((value) => ({ value, nextIndex })),
+  );
 }
 
 function isOneOf<const Values extends readonly string[]>(
@@ -69,89 +154,90 @@ function isOneOf<const Values extends readonly string[]>(
   return values.includes(value as Values[number]);
 }
 
-function parseSearch(args: string[]): Result<CliCommand, AppError> {
-  const queries: string[] = [];
-  let limit: number | undefined;
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
-
-    if (isHelpFlag(arg)) {
-      return ok({ type: "help", topic: "search", exitCode: 0 });
-    }
-
-    if (arg === "--") {
-      queries.push(...args.slice(i + 1));
-      break;
-    }
-
-    const inlineLimit = valueForInlineFlag(arg, "--limit");
-    if (inlineLimit !== undefined) {
-      const parsed = parseInteger(inlineLimit, "--limit");
-      if (parsed.isErr()) return err(parsed.error);
-      limit = parsed.value;
-      continue;
-    }
-
-    if (arg === "--limit") {
-      const taken = takeFlagValue(args, i, "--limit");
-      if (taken.isErr()) return err(taken.error);
-      const [value, nextIndex] = taken.value;
-      const parsed = parseInteger(value, "--limit");
-      if (parsed.isErr()) return err(parsed.error);
-      limit = parsed.value;
-      i = nextIndex;
-      continue;
-    }
-
-    if (arg.startsWith("-")) {
-      return err(usageError(`Unknown search option: ${arg}`));
-    }
-
-    queries.push(arg);
-  }
-
-  if (queries.length === 0) {
-    return err(usageError("At least one search query is required"));
-  }
-
-  if (queries.some((query) => query.trim() === "")) {
-    return err(usageError("Search queries cannot be empty"));
-  }
-
-  if (queries.length > 10) {
-    return err(usageError("At most 10 search queries are allowed"));
-  }
-
-  if (limit !== undefined && (limit < 1 || limit > 50)) {
-    return err(usageError("--limit must be between 1 and 50"));
-  }
-
-  return ok({ type: "search", queries, limit });
-}
+const parseSearch = (args: string[]): Result<CliCommand, AppError> =>
+  consumeArgs<SearchState>(
+    args,
+    { queries: [] },
+    ({ arg, index, state, args }) =>
+      match({ arg, inlineLimit: valueForInlineFlag(arg, "--limit") })
+        .with({ arg: P.when(isHelpFlag) }, () =>
+          ok(doneWith<SearchState>({ type: "help", topic: "search", exitCode: 0 })),
+        )
+        .with({ arg: "--" }, () =>
+          ok(
+            continueWith(
+              { ...state, queries: [...state.queries, ...args.slice(index + 1)] },
+              args.length,
+            ),
+          ),
+        )
+        .with({ inlineLimit: P.string }, ({ inlineLimit }) =>
+          parseInteger(inlineLimit, "--limit").map((limit) =>
+            continueWith({ ...state, limit }, index + 1),
+          ),
+        )
+        .with({ arg: "--limit" }, () =>
+          takeParsedFlagValue(args, index, "--limit", (value) =>
+            parseInteger(value, "--limit"),
+          ).map(({ value: limit, nextIndex }) => continueWith({ ...state, limit }, nextIndex + 1)),
+        )
+        .when(
+          ({ arg }) => arg.startsWith("-"),
+          ({ arg }) => err(usageError(`Unknown search option: ${arg}`)),
+        )
+        .otherwise(({ arg: query }) =>
+          ok(continueWith({ ...state, queries: [...state.queries, query] }, index + 1)),
+        ),
+    (state) =>
+      match(state)
+        .when(
+          ({ queries }) => queries.length === 0,
+          () => err(usageError("At least one search query is required")),
+        )
+        .when(
+          ({ queries }) => queries.some((query) => query.trim() === ""),
+          () => err(usageError("Search queries cannot be empty")),
+        )
+        .when(
+          ({ queries }) => queries.length > 10,
+          () => err(usageError("At most 10 search queries are allowed")),
+        )
+        .when(
+          ({ limit }) => limit !== undefined && (limit < 1 || limit > 50),
+          () => err(usageError("--limit must be between 1 and 50")),
+        )
+        .otherwise(({ queries, limit }) => ok({ type: "search", queries, limit })),
+  );
 
 function parseSummaryType(value: string): Result<SummaryType, AppError> {
-  if (!isOneOf(SUMMARY_TYPES, value)) {
-    return err(usageError(`--type must be one of: ${SUMMARY_TYPES.join(", ")}`));
-  }
-
-  return ok(value);
+  return match(value)
+    .with(
+      P.when((value): value is SummaryType => isOneOf(SUMMARY_TYPES, value)),
+      (summaryType) => ok(summaryType),
+    )
+    .otherwise(() => err(usageError(`--type must be one of: ${SUMMARY_TYPES.join(", ")}`)));
 }
 
 function parseSummaryLength(value: string): Result<ArticleSummaryLength, AppError> {
-  if (!isOneOf(ARTICLE_SUMMARY_LENGTHS, value)) {
-    return err(usageError(`--length must be one of: ${ARTICLE_SUMMARY_LENGTHS.join(", ")}`));
-  }
-
-  return ok(value);
+  return match(value)
+    .with(
+      P.when((value): value is ArticleSummaryLength => isOneOf(ARTICLE_SUMMARY_LENGTHS, value)),
+      (summaryLength) => ok(summaryLength),
+    )
+    .otherwise(() =>
+      err(usageError(`--length must be one of: ${ARTICLE_SUMMARY_LENGTHS.join(", ")}`)),
+    );
 }
 
 function parseSupportedLanguage(value: string): Result<SupportedLanguage, AppError> {
-  if (!isOneOf(SUPPORTED_LANGUAGES, value)) {
-    return err(usageError(`--language must be one of: ${SUPPORTED_LANGUAGES.join(", ")}`));
-  }
-
-  return ok(value);
+  return match(value)
+    .with(
+      P.when((value): value is SupportedLanguage => isOneOf(SUPPORTED_LANGUAGES, value)),
+      (language) => ok(language),
+    )
+    .otherwise(() =>
+      err(usageError(`--language must be one of: ${SUPPORTED_LANGUAGES.join(", ")}`)),
+    );
 }
 
 function parseUrl(value: string): Result<string, AppError> {
@@ -167,146 +253,116 @@ function parseUrl(value: string): Result<string, AppError> {
   }
 }
 
-function parseSummarize(args: string[]): Result<CliCommand, AppError> {
-  const urls: string[] = [];
-  let summary_type: SummaryType | undefined;
-  let summary_length: ArticleSummaryLength | undefined;
-  let target_language: SupportedLanguage | undefined;
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
-
-    if (isHelpFlag(arg)) {
-      return ok({ type: "help", topic: "summarize", exitCode: 0 });
-    }
-
-    if (arg === "--") {
-      urls.push(...args.slice(i + 1));
-      break;
-    }
-
-    const inlineType =
-      valueForInlineFlag(arg, "--type") ?? valueForInlineFlag(arg, "--summary-type");
-    if (inlineType !== undefined) {
-      const parsed = parseSummaryType(inlineType);
-      if (parsed.isErr()) return err(parsed.error);
-      summary_type = parsed.value;
-      continue;
-    }
-
-    const inlineLength = valueForInlineFlag(arg, "--length");
-    if (inlineLength !== undefined) {
-      const parsed = parseSummaryLength(inlineLength);
-      if (parsed.isErr()) return err(parsed.error);
-      summary_length = parsed.value;
-      continue;
-    }
-
-    const inlineLanguage =
-      valueForInlineFlag(arg, "--language") ?? valueForInlineFlag(arg, "--target-language");
-    if (inlineLanguage !== undefined) {
-      const parsed = parseSupportedLanguage(inlineLanguage);
-      if (parsed.isErr()) return err(parsed.error);
-      target_language = parsed.value;
-      continue;
-    }
-
-    if (arg === "--type" || arg === "--summary-type") {
-      const taken = takeFlagValue(args, i, arg);
-      if (taken.isErr()) return err(taken.error);
-      const [value, nextIndex] = taken.value;
-      const parsed = parseSummaryType(value);
-      if (parsed.isErr()) return err(parsed.error);
-      summary_type = parsed.value;
-      i = nextIndex;
-      continue;
-    }
-
-    if (arg === "--length") {
-      const taken = takeFlagValue(args, i, arg);
-      if (taken.isErr()) return err(taken.error);
-      const [value, nextIndex] = taken.value;
-      const parsed = parseSummaryLength(value);
-      if (parsed.isErr()) return err(parsed.error);
-      summary_length = parsed.value;
-      i = nextIndex;
-      continue;
-    }
-
-    if (arg === "--language" || arg === "--target-language") {
-      const taken = takeFlagValue(args, i, arg);
-      if (taken.isErr()) return err(taken.error);
-      const [value, nextIndex] = taken.value;
-      const parsed = parseSupportedLanguage(value);
-      if (parsed.isErr()) return err(parsed.error);
-      target_language = parsed.value;
-      i = nextIndex;
-      continue;
-    }
-
-    if (arg.startsWith("-")) {
-      return err(usageError(`Unknown summarize option: ${arg}`));
-    }
-
-    urls.push(arg);
-  }
-
-  if (urls.length !== 1) {
-    return err(usageError("Exactly one URL is required"));
-  }
-
-  const parsedUrl = parseUrl(urls[0]!);
-  if (parsedUrl.isErr()) return err(parsedUrl.error);
-
-  if (summary_length !== undefined && summary_type !== undefined && summary_type !== "article") {
-    return err(usageError("--length is only supported when --type is article"));
-  }
-
-  return ok({
-    type: "summarize",
-    url: parsedUrl.value,
-    summary_type,
-    summary_length,
-    target_language,
-  });
-}
+const parseSummarize = (args: string[]): Result<CliCommand, AppError> =>
+  consumeArgs<SummarizeState>(
+    args,
+    { urls: [] },
+    ({ arg, index, state, args }) =>
+      match({
+        arg,
+        inlineType: valueForInlineFlags(arg, summaryTypeFlags)?.value,
+        inlineLength: valueForInlineFlag(arg, "--length"),
+        inlineLanguage: valueForInlineFlags(arg, languageFlags)?.value,
+      })
+        .with({ arg: P.when(isHelpFlag) }, () =>
+          ok(doneWith<SummarizeState>({ type: "help", topic: "summarize", exitCode: 0 })),
+        )
+        .with({ arg: "--" }, () =>
+          ok(
+            continueWith(
+              { ...state, urls: [...state.urls, ...args.slice(index + 1)] },
+              args.length,
+            ),
+          ),
+        )
+        .with({ inlineType: P.string }, ({ inlineType }) =>
+          parseSummaryType(inlineType).map((summary_type) =>
+            continueWith({ ...state, summary_type }, index + 1),
+          ),
+        )
+        .with({ inlineLength: P.string }, ({ inlineLength }) =>
+          parseSummaryLength(inlineLength).map((summary_length) =>
+            continueWith({ ...state, summary_length }, index + 1),
+          ),
+        )
+        .with({ inlineLanguage: P.string }, ({ inlineLanguage }) =>
+          parseSupportedLanguage(inlineLanguage).map((target_language) =>
+            continueWith({ ...state, target_language }, index + 1),
+          ),
+        )
+        .when(
+          ({ arg }) => summaryTypeFlags.includes(arg as (typeof summaryTypeFlags)[number]),
+          ({ arg }) =>
+            takeParsedFlagValue(args, index, arg, parseSummaryType).map(({ value, nextIndex }) =>
+              continueWith({ ...state, summary_type: value }, nextIndex + 1),
+            ),
+        )
+        .with({ arg: "--length" }, () =>
+          takeParsedFlagValue(args, index, "--length", parseSummaryLength).map(
+            ({ value, nextIndex }) =>
+              continueWith({ ...state, summary_length: value }, nextIndex + 1),
+          ),
+        )
+        .when(
+          ({ arg }) => languageFlags.includes(arg as (typeof languageFlags)[number]),
+          ({ arg }) =>
+            takeParsedFlagValue(args, index, arg, parseSupportedLanguage).map(
+              ({ value, nextIndex }) =>
+                continueWith({ ...state, target_language: value }, nextIndex + 1),
+            ),
+        )
+        .when(
+          ({ arg }) => arg.startsWith("-"),
+          ({ arg }) => err(usageError(`Unknown summarize option: ${arg}`)),
+        )
+        .otherwise(({ arg: url }) =>
+          ok(continueWith({ ...state, urls: [...state.urls, url] }, index + 1)),
+        ),
+    (state) =>
+      match(state)
+        .when(
+          ({ urls }) => urls.length !== 1,
+          () => err(usageError("Exactly one URL is required")),
+        )
+        .otherwise(({ urls, summary_type, summary_length, target_language }) =>
+          parseUrl(urls[0]!).andThen((url) =>
+            match({ url, summary_type, summary_length, target_language })
+              .when(
+                ({ summary_length, summary_type }) =>
+                  summary_length !== undefined &&
+                  summary_type !== undefined &&
+                  summary_type !== "article",
+                () => err(usageError("--length is only supported when --type is article")),
+              )
+              .otherwise(({ url, summary_type, summary_length, target_language }) =>
+                ok({
+                  type: "summarize" as const,
+                  url,
+                  summary_type,
+                  summary_length,
+                  target_language,
+                }),
+              ),
+          ),
+        ),
+  );
 
 function parseMcp(args: string[]): Result<CliCommand, AppError> {
-  if (args.length === 0) {
-    return ok({ type: "mcp" });
-  }
-
-  if (args.length === 1 && isHelpFlag(args[0]!)) {
-    return ok({ type: "help", topic: "mcp", exitCode: 0 });
-  }
-
-  return err(usageError(`Unknown mcp option: ${args[0] ?? ""}`));
+  return match(args)
+    .with([], () => ok({ type: "mcp" as const }))
+    .with([P.when(isHelpFlag)], () => ok({ type: "help" as const, topic: "mcp", exitCode: 0 }))
+    .otherwise(([arg = ""]) => err(usageError(`Unknown mcp option: ${arg}`)));
 }
 
 export function parseCliArgs(args: string[]): Result<CliCommand, AppError> {
   const [command, ...rest] = args;
 
-  if (command === undefined) {
-    return ok({ type: "help", exitCode: 2 });
-  }
-
-  if (isHelpFlag(command)) {
-    return ok({ type: "help", exitCode: 0 });
-  }
-
-  if (isVersionFlag(command)) {
-    return ok({ type: "version" });
-  }
-
-  switch (command) {
-    case "search":
-      return parseSearch(rest);
-    case "summarize":
-    case "summary":
-      return parseSummarize(rest);
-    case "mcp":
-      return parseMcp(rest);
-    default:
-      return err(usageError(`Unknown command: ${command}`));
-  }
+  return match(command)
+    .with(P.nullish, () => ok({ type: "help" as const, exitCode: 2 }))
+    .with(P.union("--help", "-h"), () => ok({ type: "help" as const, exitCode: 0 }))
+    .with(P.union("--version", "-v"), () => ok({ type: "version" as const }))
+    .with("search", () => parseSearch(rest))
+    .with(P.union("summarize", "summary"), () => parseSummarize(rest))
+    .with("mcp", () => parseMcp(rest))
+    .otherwise((command) => err(usageError(`Unknown command: ${command}`)));
 }

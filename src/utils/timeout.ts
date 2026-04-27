@@ -1,4 +1,5 @@
 import { err, ok, ResultAsync, type Result } from "neverthrow";
+import { match } from "ts-pattern";
 
 import { toUnexpectedError, type AppError } from "./errors.ts";
 
@@ -12,37 +13,43 @@ export function withTimeout<T, E extends AppError>(
     const controller = new AbortController();
     let settled = false;
 
-    const timeoutId = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      controller.abort(new Error(message));
-      resolve(err({ type: "TimeoutError", message }));
-    }, timeoutMs);
+    const settle = (complete: () => void) =>
+      match(settled)
+        .with(true, () => undefined)
+        .with(false, () => {
+          settled = true;
+          complete();
+        })
+        .exhaustive();
 
-    let operationResult: ResultAsync<T, E>;
+    const timeoutId = setTimeout(
+      () =>
+        settle(() => {
+          controller.abort(new Error(message));
+          resolve(err({ type: "TimeoutError", message }));
+        }),
+      timeoutMs,
+    );
+
     try {
-      operationResult = operation(controller.signal);
+      operation(controller.signal).then(
+        (result) =>
+          settle(() => {
+            clearTimeout(timeoutId);
+            resolve(result);
+          }),
+        (cause: unknown) =>
+          settle(() => {
+            clearTimeout(timeoutId);
+            resolve(err(toUnexpectedError(cause)));
+          }),
+      );
     } catch (cause) {
-      settled = true;
-      clearTimeout(timeoutId);
-      resolve(err(toUnexpectedError(cause)));
-      return;
-    }
-
-    operationResult.then(
-      (result) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeoutId);
-        resolve(result);
-      },
-      (cause: unknown) => {
-        if (settled) return;
-        settled = true;
+      settle(() => {
         clearTimeout(timeoutId);
         resolve(err(toUnexpectedError(cause)));
-      },
-    );
+      });
+    }
   });
 
   return new ResultAsync(resultPromise);
