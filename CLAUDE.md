@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-kagi-ken-mcp is an MCP (Model Context Protocol) server that exposes Kagi search and summarization as tools for Claude Desktop/Code. It uses session tokens (not API keys) via the `kagi-ken` package. Use Bun as the runtime.
+kagi-ken-mcp is an MCP (Model Context Protocol) server that exposes Kagi search and summarization as tools for Claude Desktop/Code. It uses session tokens (not API keys) with an inlined Kagi client under `src/kagi/`. Use Bun as the runtime.
 
 ## Commands
 
@@ -15,21 +15,21 @@ bun run dev                                              # Run with inspector
 bun run typecheck                                        # Type-check with tsgo
 bun run lint                                             # Lint with oxlint
 bun run fmt                                              # Format with oxfmt
+bun test                                                 # Run unit tests; live integrations skip by default
+bun run test:integration                                 # Run live Kagi integration tests with KAGI_INTEGRATION=1
 bunx @modelcontextprotocol/inspector bun src/index.ts    # Debug with MCP Inspector (localhost:5173)
 ```
-
-There are no tests configured.
 
 ## Architecture
 
 The server uses `@modelcontextprotocol/sdk` with stdio transport. Entry point is `src/index.ts` which creates a `KagiKenMcpServer` class that registers two tools:
 
-- **`kagi_search_fetch`** (`src/tools/search.ts`) — concurrent multi-query search via `Promise.allSettled()` with 10s per-query timeouts
-- **`kagi_summarizer`** (`src/tools/summarizer.ts`) — URL summarization with configurable summary type and language
+- **`kagi_search_fetch`** (`src/tools/search.ts`) — concurrent multi-query search via `Promise.allSettled()` with abortable 10s per-query timeouts and a max of 10 queries
+- **`kagi_summarizer`** (`src/tools/summarizer.ts`) — URL summarization with configurable summary type/language and an abortable 60s timeout
 
 Each tool module exports a handler function and a config object (name, description, inputSchema). Tools return MCP-compliant `{ content: [{ type: "text", text }] }` responses.
 
-**Kagi API client** (`src/kagi/`): Inlined HTTP client (originally from the external `kagi-ken` package). Contains `http.ts` (request handling), `search.ts`, and `summarize.ts`.
+**Kagi API client** (`src/kagi/`): Inlined HTTP client (originally from the external `kagi-ken` package). Contains `http.ts` (request handling, response validation, auth/challenge detection), `search.ts`, and `summarize.ts`.
 
 **Token resolution** (`src/utils/auth.ts`): `KAGI_SESSION_TOKEN` env var > `~/.kagi_session_token` file.
 

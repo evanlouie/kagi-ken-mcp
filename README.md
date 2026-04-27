@@ -1,6 +1,6 @@
 # kagi-ken-mcp
 
-A lightweight Bun MCP server around the [`kagi-ken` package](https://github.com/czottmann/kagi-ken), providing access to Kagi.com services using Kagi session tokens:
+A lightweight Bun MCP server with an inlined Kagi session-token client, providing access to Kagi.com services using Kagi session tokens:
 
 - **Search**: Searches Kagi
 - **Summarizer**: Uses Kagi's Summarizer to create summaries from URLs or text content
@@ -25,9 +25,10 @@ The server supports two methods for using your Kagi session token (see [Installa
 
 It includes comprehensive error handling:
 
-- Connection timeouts (10 seconds per search)
+- Abortable timeouts (10 seconds per search query, 60 seconds per summarization)
 - Invalid input validation
 - Environment variable validation
+- Explicit invalid-token and browser-verification detection
 - Graceful error formatting
 
 <a href="https://glama.ai/mcp/servers/@evanlouie/kagi-ken-mcp">
@@ -133,11 +134,12 @@ e.g. _"Who was time's 2024 person of the year?"_ for search, or "summarize this 
 
 ### `kagi_search_fetch`
 
-Fetch web results based on one or more queries using the Kagi Search API. Results are numbered continuously for easy reference.
+Fetch web results based on one or more queries using Kagi Search. Results are numbered continuously for easy reference.
 
 **Parameters:**
 
-- `queries` (array of strings): One or more search queries
+- `queries` (array of strings): One to ten non-empty search queries
+- `limit` (number, optional): Maximum number of results per query (default: 10, max: 50)
 
 ### `kagi_summarizer`
 
@@ -158,11 +160,17 @@ Summarize content from URLs using the Kagi Summarizer API. Supports various docu
 kagi-ken-mcp/
 ├── src/
 │   ├── index.ts              # Main server entry point
+│   ├── kagi/
+│   │   ├── http.ts           # Kagi HTTP helpers and response validation
+│   │   ├── search.ts         # Inlined Kagi search client/parser
+│   │   └── summarize.ts      # Inlined Kagi summarizer client/parser
 │   ├── tools/
 │   │   ├── search.ts         # Search tool implementation
 │   │   └── summarizer.ts     # Summarizer tool implementation
 │   └── utils/
-│       └── formatting.ts     # Utility functions
+│       ├── auth.ts           # Session token resolution
+│       ├── formatting.ts     # Output/error formatting helpers
+│       └── timeout.ts        # Abortable timeout helper
 ├── package.json
 └── README.md
 ```
@@ -185,6 +193,13 @@ kagi-ken-mcp/
 
 ```bash
 bun run dev
+```
+
+### Testing
+
+```bash
+bun test                 # Unit tests; live integration tests are skipped by default
+bun run test:integration # Opt into live Kagi integration tests
 ```
 
 ### Debugging

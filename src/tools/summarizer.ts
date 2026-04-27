@@ -1,15 +1,18 @@
 import {
   articleSummaryLengthSchema,
-  summaryTypeSchema,
   summarize,
+  summaryTypeSchema,
   supportedLanguageSchema,
   type ArticleSummaryLength,
   type SummaryType,
   type SupportedLanguage,
 } from "../kagi/summarize.ts";
-import { formatError } from "../utils/formatting.ts";
 import { resolveToken } from "../utils/auth.ts";
+import { formatError } from "../utils/formatting.ts";
+import { withTimeout } from "../utils/timeout.ts";
 import { z } from "zod";
+
+const SUMMARY_TIMEOUT_MS = 60_000;
 
 export const summarizerInputSchema = {
   url: z.string().url().describe("A URL to a document to summarize."),
@@ -45,12 +48,22 @@ export async function kagiSummarizer({
   try {
     const token = resolveToken();
 
-    const result = await summarize(url, token, {
-      type: summary_type,
-      summaryLength: summary_length,
-      language: target_language,
-      isUrl: true,
-    });
+    const result = await withTimeout(
+      (signal) =>
+        summarize(
+          url,
+          token,
+          {
+            type: summary_type,
+            summaryLength: summary_length,
+            language: target_language,
+            isUrl: true,
+          },
+          { signal },
+        ),
+      SUMMARY_TIMEOUT_MS,
+      "Summarizer timeout",
+    );
 
     return {
       content: [{ type: "text" as const, text: result.data.output }],

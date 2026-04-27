@@ -1,4 +1,11 @@
-import { kagiHeaders, checkResponse, rethrowAsNetworkError } from "./http.ts";
+import {
+  assertNotAuthOrChallengeResponse,
+  checkResponseStatus,
+  isHtmlDocument,
+  kagiHeaders,
+  rethrowAsNetworkError,
+  type RequestOptions,
+} from "./http.ts";
 import { z } from "zod";
 
 export const SUPPORTED_LANGUAGES = [
@@ -72,6 +79,7 @@ export async function summarize(
   input: string,
   token: string,
   options?: SummarizeOptions,
+  requestOptions: RequestOptions = {},
 ): Promise<SummarizeResponse> {
   if (!input) {
     throw new Error("Input is required and must be a string");
@@ -81,12 +89,7 @@ export async function summarize(
     throw new Error("Session token is required and must be a string");
   }
 
-  const {
-    type = "article",
-    summaryLength,
-    language = "EN",
-    isUrl = false,
-  } = options ?? {};
+  const { type = "article", summaryLength, language = "EN", isUrl = false } = options ?? {};
 
   if (summaryLength && type !== "article") {
     throw new Error("summaryLength is only supported when type is 'article'");
@@ -117,6 +120,7 @@ export async function summarize(
       response = await fetch(url.toString(), {
         method: "GET",
         headers: sharedHeaders,
+        signal: requestOptions.signal,
       });
     } else {
       const formData = new URLSearchParams();
@@ -135,12 +139,19 @@ export async function summarize(
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
         },
         body: formData,
+        signal: requestOptions.signal,
       });
     }
 
-    checkResponse(response);
+    checkResponseStatus(response);
 
     const streamData = await response.text();
+    assertNotAuthOrChallengeResponse(response, streamData);
+
+    if (isHtmlDocument(streamData)) {
+      throw new Error("Unexpected HTML response from Kagi summarizer");
+    }
+
     const parsedResponse = parseStreamingSummary(streamData);
 
     if (parsedResponse.error) {
@@ -161,46 +172,59 @@ const streamingSummarySchema = z.object({
   md: z.string().optional(),
 });
 
-function parseStreamingSummary(streamData: string): ParsedSummaryOutput {
-  const messages = streamData
-    .split("\u0000")
-    .map((message) => message.trim())
-    .filter(Boolean);
+type StreamingSummaryMessage = z.infer<typeof streamingSummarySchema>;
 
-  const lastMessage = messages.at(-1);
-
-  if (!lastMessage) {
-    throw new Error("No summary data received");
-  }
-
-  const jsonString = lastMessage
+function stripStreamPrefix(message: string): string {
+  return message
     .replace(/^final:/, "")
     .replace(/^new_message\.json:/, "")
     .trim();
-
-  if (!jsonString) {
-    throw new Error("Empty summary received");
-  }
-
-  const parsed: unknown = JSON.parse(jsonString);
-  const result = streamingSummarySchema.safeParse(parsed);
-  if (!result.success) {
-    throw new TypeError("Failed to parse summary response", {
-      cause: result.error,
-    });
-  }
-
-  if (result.data.state === "error") {
-    return {
-      error: result.data.reply?.trim() || "Kagi could not generate a summary",
-      output: "",
-    };
-  }
-
-  const output = result.data.output_data?.markdown ?? result.data.md ?? "";
-  if (!output.trim()) {
-    throw new Error("Empty summary received");
-  }
-
-  return { output };
 }
+
+function parseStreamingSummary(streamData: string): ParsedSummaryOutput {
+  const rawMessages = streamData
+    .split("\u0000")
+    .map((message) => stripStreamPrefix(message.trim()))
+    .filter(Boolean);
+
+  if (rawMessages.length === 0) {
+    throw new Error("No summary data received");
+  }
+
+  const parsedMessages: StreamingSummaryMessage[] = [];
+  const parseErrors: unknown[] = [];
+
+  for (const jsonString of rawMessages) {
+    try {
+      const parsed: unknown = JSON.parse(jsonString);
+      const result = streamingSummarySchema.safeParse(parsed);
+      if (result.success) {
+        parsedMessages.push(result.data);
+      } else {
+        parseErrors.push(result.error);
+      }
+    } catch (error) {
+      parseErrors.push(error);
+    }
+  }
+
+  if (parsedMessages.length === 0) {
+    throw new TypeError("Failed to parse summary response", { cause: parseErrors.at(-1) });
+  }
+
+  const errorMessage = parsedMessages.find((message) => message.state === "error")?.reply?.trim();
+  if (errorMessage) {
+    return { error: errorMessage, output: "" };
+  }
+
+  for (const message of parsedMessages.toReversed()) {
+    const output = message.output_data?.markdown ?? message.md ?? "";
+    if (output.trim()) {
+      return { output };
+    }
+  }
+
+  throw new Error("Empty summary received");
+}
+
+export const __testing = { parseStreamingSummary };

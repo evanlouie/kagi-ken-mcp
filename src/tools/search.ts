@@ -1,14 +1,19 @@
 import { search, type SearchResponse } from "../kagi/search.ts";
-import { errorMessage, formatError, formatSearchResults } from "../utils/formatting.ts";
 import { resolveToken } from "../utils/auth.ts";
+import { errorMessage, formatError, formatSearchResults } from "../utils/formatting.ts";
+import { withTimeout } from "../utils/timeout.ts";
 import { z } from "zod";
+
+const SEARCH_TIMEOUT_MS = 10_000;
+const MAX_QUERIES = 10;
 
 export const searchInputSchema = {
   queries: z
-    .array(z.string())
+    .array(z.string().trim().min(1))
     .min(1)
+    .max(MAX_QUERIES)
     .describe(
-      "One or more concise, keyword-focused search queries. Include essential context within each query for standalone use.",
+      "One to ten concise, keyword-focused search queries. Include essential context within each query for standalone use.",
     ),
   limit: z
     .number()
@@ -29,22 +34,23 @@ export async function kagiSearchFetch({
 }) {
   try {
     const token = resolveToken();
+    const normalizedQueries = queries.map((query) => query.trim());
 
-    const searchPromises = queries.map((query) => search(query.trim(), token, limit));
+    if (normalizedQueries.length === 0 || normalizedQueries.some((query) => query === "")) {
+      throw new Error("At least one non-empty search query is required");
+    }
+
+    if (normalizedQueries.length > MAX_QUERIES) {
+      throw new Error(`At most ${MAX_QUERIES} search queries are allowed`);
+    }
 
     const results = await Promise.allSettled(
-      searchPromises.map((promise) =>
-        Promise.race([
-          promise,
-          new Promise<never>((_, reject) => {
-            const id = setTimeout(() => {
-              reject(new Error("Search timeout"));
-            }, 10_000);
-            void promise.finally(() => {
-              clearTimeout(id);
-            });
-          }),
-        ]),
+      normalizedQueries.map((query) =>
+        withTimeout(
+          (signal) => search(query, token, limit, { signal }),
+          SEARCH_TIMEOUT_MS,
+          "Search timeout",
+        ),
       ),
     );
 
@@ -56,12 +62,12 @@ export async function kagiSearchFetch({
       if (result.status === "fulfilled") {
         responses.push(result.value);
       } else {
-        errors.push(`Query "${queries[i]}": ${errorMessage(result.reason)}`);
+        errors.push(`Query "${normalizedQueries[i]}": ${errorMessage(result.reason)}`);
         responses.push({ data: [] });
       }
     }
 
-    const formattedResults = formatSearchResults(queries, responses);
+    const formattedResults = formatSearchResults(normalizedQueries, responses);
 
     let finalResponse = formattedResults;
     if (errors.length > 0) {
