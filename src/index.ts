@@ -2,11 +2,13 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-
-import { kagiSearchFetch, searchToolConfig } from "./tools/search.ts";
-import { kagiSummarizer, summarizerToolConfig } from "./tools/summarizer.ts";
+import { ResultAsync } from "neverthrow";
 
 import pkg from "../package.json";
+import { kagiSearchFetch, searchToolConfig } from "./tools/search.ts";
+import { kagiSummarizer, summarizerToolConfig } from "./tools/summarizer.ts";
+import { formatAppError, toUnexpectedError, type AppError } from "./utils/errors.ts";
+
 const { version } = pkg;
 
 class KagiKenMcpServer {
@@ -42,15 +44,15 @@ class KagiKenMcpServer {
     );
   }
 
-  async start() {
-    try {
-      const transport = new StdioServerTransport();
-      await this.server.connect(transport);
-      console.error(`Kagi Ken MCP Server v${version} started successfully`);
-    } catch (error) {
-      console.error(`Failed to start Kagi Ken MCP Server v${version}:`, error);
-      process.exit(1);
-    }
+  start(): ResultAsync<void, AppError> {
+    return ResultAsync.fromPromise(
+      (async () => {
+        const transport = new StdioServerTransport();
+        await this.server.connect(transport);
+        console.error(`Kagi Ken MCP Server v${version} started successfully`);
+      })(),
+      toUnexpectedError,
+    );
   }
 }
 
@@ -65,4 +67,11 @@ process.on("unhandledRejection", (reason) => {
 });
 
 const server = new KagiKenMcpServer();
-await server.start();
+const startResult = await server.start();
+if (startResult.isErr()) {
+  console.error(
+    `Failed to start Kagi Ken MCP Server v${version}:`,
+    formatAppError(startResult.error),
+  );
+  process.exit(1);
+}

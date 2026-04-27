@@ -1,12 +1,16 @@
+import { err, errAsync, ok, ResultAsync, type Result } from "neverthrow";
+import { z } from "zod";
+
+import type { AppError } from "../utils/errors.ts";
 import {
-  assertNotAuthOrChallengeResponse,
+  checkNotAuthOrChallengeResponse,
   checkResponseStatus,
   isHtmlDocument,
   kagiHeaders,
-  rethrowAsNetworkError,
+  mapFetchError,
+  safeFetch,
   type RequestOptions,
 } from "./http.ts";
-import { z } from "zod";
 
 export const SUPPORTED_LANGUAGES = [
   "BG",
@@ -71,98 +75,100 @@ export interface SummarizeResponse {
 
 interface ParsedSummaryOutput {
   output: string;
-  error?: string;
 }
 
 /** Summarizes a URL or text input using Kagi's streaming summarization endpoint. */
-export async function summarize(
+export function summarize(
   input: string,
   token: string,
   options?: SummarizeOptions,
   requestOptions: RequestOptions = {},
-): Promise<SummarizeResponse> {
-  if (!input) {
-    throw new Error("Input is required and must be a string");
+): ResultAsync<SummarizeResponse, AppError> {
+  if (typeof input !== "string" || input.trim() === "") {
+    return errAsync({ type: "ValidationError", message: "Input is required and must be a string" });
   }
 
-  if (!token) {
-    throw new Error("Session token is required and must be a string");
+  if (typeof token !== "string" || token.trim() === "") {
+    return errAsync({
+      type: "ValidationError",
+      message: "Session token is required and must be a string",
+    });
   }
 
   const { type = "article", summaryLength, language = "EN", isUrl = false } = options ?? {};
 
   if (summaryLength && type !== "article") {
-    throw new Error("summaryLength is only supported when type is 'article'");
+    return errAsync({
+      type: "ValidationError",
+      message: "summaryLength is only supported when type is 'article'",
+    });
   }
 
-  try {
-    const sharedHeaders = {
-      ...kagiHeaders(token),
-      Accept: "application/vnd.kagi.stream",
-      Connection: "keep-alive",
-      Host: "kagi.com",
-      Pragma: "no-cache",
-      Referer: "https://kagi.com/summarizer",
-    };
+  const sharedHeaders = {
+    ...kagiHeaders(token),
+    Accept: "application/vnd.kagi.stream",
+    Connection: "keep-alive",
+    Host: "kagi.com",
+    Pragma: "no-cache",
+    Referer: "https://kagi.com/summarizer",
+  };
 
-    let response: Response;
+  let responseResult: ResultAsync<Response, AppError>;
 
-    if (isUrl) {
-      const url = new URL("https://kagi.com/mother/summary_labs");
-      url.searchParams.set("url", input);
-      url.searchParams.set("stream", "1");
-      url.searchParams.set("target_language", language);
-      url.searchParams.set("summary_type", type);
-      if (summaryLength) {
-        url.searchParams.set("summary_length", summaryLength);
-      }
-
-      response = await fetch(url.toString(), {
-        method: "GET",
-        headers: sharedHeaders,
-        signal: requestOptions.signal,
-      });
-    } else {
-      const formData = new URLSearchParams();
-      formData.set("text", input);
-      formData.set("stream", "1");
-      formData.set("target_language", language);
-      formData.set("summary_type", type);
-      if (summaryLength) {
-        formData.set("summary_length", summaryLength);
-      }
-
-      response = await fetch("https://kagi.com/mother/summary_labs/", {
-        method: "POST",
-        headers: {
-          ...sharedHeaders,
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        },
-        body: formData,
-        signal: requestOptions.signal,
-      });
+  if (isUrl) {
+    const url = new URL("https://kagi.com/mother/summary_labs");
+    url.searchParams.set("url", input);
+    url.searchParams.set("stream", "1");
+    url.searchParams.set("target_language", language);
+    url.searchParams.set("summary_type", type);
+    if (summaryLength) {
+      url.searchParams.set("summary_length", summaryLength);
     }
 
-    checkResponseStatus(response);
-
-    const streamData = await response.text();
-    assertNotAuthOrChallengeResponse(response, streamData);
-
-    if (isHtmlDocument(streamData)) {
-      throw new Error("Unexpected HTML response from Kagi summarizer");
+    responseResult = safeFetch(url.toString(), {
+      method: "GET",
+      headers: sharedHeaders,
+      signal: requestOptions.signal,
+    });
+  } else {
+    const formData = new URLSearchParams();
+    formData.set("text", input);
+    formData.set("stream", "1");
+    formData.set("target_language", language);
+    formData.set("summary_type", type);
+    if (summaryLength) {
+      formData.set("summary_length", summaryLength);
     }
 
-    const parsedResponse = parseStreamingSummary(streamData);
-
-    if (parsedResponse.error) {
-      throw new Error(parsedResponse.error);
-    }
-
-    const output = parsedResponse.output;
-    return { data: { output } };
-  } catch (error: unknown) {
-    rethrowAsNetworkError(error);
+    responseResult = safeFetch("https://kagi.com/mother/summary_labs/", {
+      method: "POST",
+      headers: {
+        ...sharedHeaders,
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+      },
+      body: formData,
+      signal: requestOptions.signal,
+    });
   }
+
+  return responseResult.andThen((response) =>
+    checkResponseStatus(response).asyncAndThen(() =>
+      ResultAsync.fromPromise(response.text(), mapFetchError).andThen((streamData) =>
+        checkNotAuthOrChallengeResponse(response, streamData).andThen(() => {
+          if (isHtmlDocument(streamData)) {
+            return err({
+              type: "ParseError" as const,
+              message: "Unexpected HTML response from Kagi summarizer",
+            });
+          }
+
+          return parseStreamingSummary(streamData).map((parsedResponse) => ({
+            data: { output: parsedResponse.output },
+          }));
+        }),
+      ),
+    ),
+  );
 }
 
 const streamingSummarySchema = z.object({
@@ -181,14 +187,14 @@ function stripStreamPrefix(message: string): string {
     .trim();
 }
 
-function parseStreamingSummary(streamData: string): ParsedSummaryOutput {
+function parseStreamingSummary(streamData: string): Result<ParsedSummaryOutput, AppError> {
   const rawMessages = streamData
     .split("\u0000")
     .map((message) => stripStreamPrefix(message.trim()))
     .filter(Boolean);
 
   if (rawMessages.length === 0) {
-    throw new Error("No summary data received");
+    return err({ type: "ParseError", message: "No summary data received" });
   }
 
   const parsedMessages: StreamingSummaryMessage[] = [];
@@ -209,22 +215,28 @@ function parseStreamingSummary(streamData: string): ParsedSummaryOutput {
   }
 
   if (parsedMessages.length === 0) {
-    throw new TypeError("Failed to parse summary response", { cause: parseErrors.at(-1) });
+    return err({
+      type: "ParseError",
+      message: "Failed to parse summary response",
+      cause: parseErrors.at(-1),
+    });
   }
 
-  const errorMessage = parsedMessages.find((message) => message.state === "error")?.reply?.trim();
-  if (errorMessage) {
-    return { error: errorMessage, output: "" };
+  const kagiErrorMessage = parsedMessages
+    .find((message) => message.state === "error")
+    ?.reply?.trim();
+  if (kagiErrorMessage) {
+    return err({ type: "HttpError", message: kagiErrorMessage });
   }
 
   for (const message of parsedMessages.toReversed()) {
     const output = message.output_data?.markdown ?? message.md ?? "";
     if (output.trim()) {
-      return { output };
+      return ok({ output });
     }
   }
 
-  throw new Error("Empty summary received");
+  return err({ type: "ParseError", message: "Empty summary received" });
 }
 
 export const __testing = { parseStreamingSummary };

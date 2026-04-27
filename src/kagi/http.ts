@@ -1,4 +1,6 @@
-import { isErrnoException } from "../utils/formatting.ts";
+import { err, errAsync, ok, ResultAsync, type Result } from "neverthrow";
+
+import { isErrnoException, toUnexpectedError, type AppError } from "../utils/errors.ts";
 
 export interface RequestOptions {
   signal?: AbortSignal;
@@ -34,23 +36,26 @@ export function kagiHeaders(token: string): Record<string, string> {
   };
 }
 
-/** Throws an error if the HTTP response indicates failure. */
-export function checkResponseStatus(response: Response): void {
+/** Returns an error result if the HTTP response indicates failure. */
+export function checkResponseStatus(response: Response): Result<void, AppError> {
   if (response.status === 401 || response.status === 403) {
-    throw new Error("Invalid or expired session token");
+    return err({ type: "AuthError", message: "Invalid or expired session token" });
   }
 
   if (response.status === 429) {
-    throw new Error("Kagi rate limit exceeded; try again later");
+    return err({ type: "RateLimitError", message: "Kagi rate limit exceeded; try again later" });
   }
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    return err({
+      type: "HttpError",
+      status: response.status,
+      message: `HTTP ${response.status}: ${response.statusText}`,
+    });
   }
-}
 
-/** Backward-compatible alias for status-only checks. */
-export const checkResponse = checkResponseStatus;
+  return ok(undefined);
+}
 
 /** Returns true when a response URL points at an auth, login, or browser verification page. */
 export function isAuthOrChallengeUrl(url: string): boolean {
@@ -80,19 +85,28 @@ export function isHtmlDocument(body: string): boolean {
   );
 }
 
-/** Throws a clear error when Kagi returned login/challenge content despite a successful status. */
-export function assertNotAuthOrChallengeResponse(response: Response, body?: string): void {
+/** Returns a clear error when Kagi returned login/challenge content despite a successful status. */
+export function checkNotAuthOrChallengeResponse(
+  response: Response,
+  body?: string,
+): Result<void, AppError> {
   if (isAuthOrChallengeUrl(response.url)) {
-    throw new Error(
-      "Kagi requires additional browser verification; refresh your session token or complete the challenge in a browser",
-    );
+    return err({
+      type: "KagiChallengeError",
+      message:
+        "Kagi requires additional browser verification; refresh your session token or complete the challenge in a browser",
+    });
   }
 
   if (body !== undefined && isAuthOrChallengeBody(body)) {
-    throw new Error(
-      "Kagi requires additional browser verification; refresh your session token or complete the challenge in a browser",
-    );
+    return err({
+      type: "KagiChallengeError",
+      message:
+        "Kagi requires additional browser verification; refresh your session token or complete the challenge in a browser",
+    });
   }
+
+  return ok(undefined);
 }
 
 /** Type guard that checks if an error is a network connectivity error. */
@@ -103,10 +117,27 @@ export function isNetworkError(error: unknown): error is NodeJS.ErrnoException {
   );
 }
 
-/** Re-throws network errors with a user-friendly message; all other errors pass through unchanged. */
-export function rethrowAsNetworkError(error: unknown): never {
+/** Maps fetch/network failures to typed application errors. */
+export function mapFetchError(error: unknown): AppError {
   if (isNetworkError(error)) {
-    throw new Error("Network error: Unable to connect to Kagi", { cause: error });
+    return {
+      type: "NetworkError",
+      message: "Network error: Unable to connect to Kagi",
+      cause: error,
+    };
   }
-  throw error;
+
+  return toUnexpectedError(error);
+}
+
+/** Safely calls fetch, mapping both synchronous throws and asynchronous rejections into typed errors. */
+export function safeFetch(
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+): ResultAsync<Response, AppError> {
+  try {
+    return ResultAsync.fromPromise(fetch(input, init), mapFetchError);
+  } catch (error) {
+    return errAsync(mapFetchError(error));
+  }
 }

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 
 import { search, __testing as searchTesting } from "../../src/kagi/search.ts";
-import { __testing as summarizeTesting } from "../../src/kagi/summarize.ts";
+import { summarize, __testing as summarizeTesting } from "../../src/kagi/summarize.ts";
 import { searchInputSchema } from "../../src/tools/search.ts";
-import { z } from "zod";
 
 const searchSchema = z.object(searchInputSchema);
 
@@ -23,7 +23,8 @@ describe("search parser", () => {
       1,
     );
 
-    expect(results).toEqual([
+    expect(results.isOk()).toBe(true);
+    expect(results._unsafeUnwrap()).toEqual([
       { t: 0, url: "https://example.com/a", title: "Example A", snippet: "Snippet A" },
     ]);
   });
@@ -34,17 +35,60 @@ describe("search parser", () => {
       10,
     );
 
-    expect(results).toEqual([]);
+    expect(results.isOk()).toBe(true);
+    expect(results._unsafeUnwrap()).toEqual([]);
   });
 
-  test("throws on unexpected HTML", () => {
-    expect(() => searchTesting.parseSearchResults("<html><body>login shell</body></html>", 10)).toThrow(
-      "Failed to parse search results - unexpected HTML structure",
-    );
+  test("returns ParseError on unexpected HTML", () => {
+    const result = searchTesting.parseSearchResults("<html><body>login shell</body></html>", 10);
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toMatchObject({
+      type: "ParseError",
+      message: "Failed to parse search results - unexpected HTML structure",
+    });
   });
 
   test("enforces direct search limit bounds before fetching", async () => {
-    await expect(search("test", "token", 51)).rejects.toThrow("Limit must be an integer between 1 and 50");
+    const result = await search("test", "token", 51);
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toMatchObject({
+      type: "ValidationError",
+      message: "Limit must be an integer between 1 and 50",
+    });
+  });
+
+  test("rejects non-string search input before fetching", async () => {
+    const queryResult = await search(123 as unknown as string, "token", 1);
+    expect(queryResult.isErr()).toBe(true);
+    expect(queryResult._unsafeUnwrapErr()).toMatchObject({
+      type: "ValidationError",
+      message: "Search query is required and must be a string",
+    });
+
+    const tokenResult = await search("test", 123 as unknown as string, 1);
+    expect(tokenResult.isErr()).toBe(true);
+    expect(tokenResult._unsafeUnwrapErr()).toMatchObject({
+      type: "ValidationError",
+      message: "Session token is required and must be a string",
+    });
+  });
+});
+
+describe("summarizer validation", () => {
+  test("rejects non-string summarizer input before fetching", async () => {
+    const inputResult = await summarize(123 as unknown as string, "token");
+    expect(inputResult.isErr()).toBe(true);
+    expect(inputResult._unsafeUnwrapErr()).toMatchObject({
+      type: "ValidationError",
+      message: "Input is required and must be a string",
+    });
+
+    const tokenResult = await summarize("input", 123 as unknown as string);
+    expect(tokenResult.isErr()).toBe(true);
+    expect(tokenResult._unsafeUnwrapErr()).toMatchObject({
+      type: "ValidationError",
+      message: "Session token is required and must be a string",
+    });
   });
 });
 
@@ -54,7 +98,8 @@ describe("summarizer stream parser", () => {
       'new_message.json:{"state":"generating"}\u0000final:{"output_data":{"markdown":"Summary"}}',
     );
 
-    expect(result).toEqual({ output: "Summary" });
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toEqual({ output: "Summary" });
   });
 
   test("uses latest summary frame even with trailing metadata", () => {
@@ -62,25 +107,36 @@ describe("summarizer stream parser", () => {
       '{"md":"Draft"}\u0000{"output_data":{"markdown":"Final summary"}}\u0000{"state":"done"}',
     );
 
-    expect(result).toEqual({ output: "Final summary" });
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toEqual({ output: "Final summary" });
   });
 
   test("parses md field", () => {
     const result = summarizeTesting.parseStreamingSummary('{"md":"Markdown summary"}');
 
-    expect(result).toEqual({ output: "Markdown summary" });
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toEqual({ output: "Markdown summary" });
   });
 
-  test("returns Kagi error frames", () => {
+  test("returns Kagi error frames as HttpError", () => {
     const result = summarizeTesting.parseStreamingSummary(
       '{"state":"error","reply":"Could not summarize"}',
     );
 
-    expect(result).toEqual({ error: "Could not summarize", output: "" });
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toMatchObject({
+      type: "HttpError",
+      message: "Could not summarize",
+    });
   });
 
-  test("throws on empty stream", () => {
-    expect(() => summarizeTesting.parseStreamingSummary("\u0000")).toThrow("No summary data received");
+  test("returns ParseError on empty stream", () => {
+    const result = summarizeTesting.parseStreamingSummary("\u0000");
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toMatchObject({
+      type: "ParseError",
+      message: "No summary data received",
+    });
   });
 });
 

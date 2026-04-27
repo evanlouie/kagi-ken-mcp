@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  assertNotAuthOrChallengeResponse,
+  checkNotAuthOrChallengeResponse,
   checkResponseStatus,
   isAuthOrChallengeBody,
   isAuthOrChallengeUrl,
   isHtmlDocument,
+  safeFetch,
 } from "../../src/kagi/http.ts";
 
 function responseWithUrl(url: string, body = ""): Response {
@@ -16,12 +17,19 @@ function responseWithUrl(url: string, body = ""): Response {
 
 describe("Kagi HTTP response helpers", () => {
   test("maps auth status codes to session token error", () => {
-    expect(() => checkResponseStatus(new Response("", { status: 401 }))).toThrow(
-      "Invalid or expired session token",
-    );
-    expect(() => checkResponseStatus(new Response("", { status: 403 }))).toThrow(
-      "Invalid or expired session token",
-    );
+    const unauthorized = checkResponseStatus(new Response("", { status: 401 }));
+    expect(unauthorized.isErr()).toBe(true);
+    expect(unauthorized._unsafeUnwrapErr()).toMatchObject({
+      type: "AuthError",
+      message: "Invalid or expired session token",
+    });
+
+    const forbidden = checkResponseStatus(new Response("", { status: 403 }));
+    expect(forbidden.isErr()).toBe(true);
+    expect(forbidden._unsafeUnwrapErr()).toMatchObject({
+      type: "AuthError",
+      message: "Invalid or expired session token",
+    });
   });
 
   test("detects auth and challenge URLs", () => {
@@ -38,18 +46,36 @@ describe("Kagi HTTP response helpers", () => {
     expect(isAuthOrChallengeBody("ordinary search response")).toBe(false);
   });
 
-  test("throws clear error for successful challenge response", () => {
-    expect(() =>
-      assertNotAuthOrChallengeResponse(responseWithUrl("https://kagi.com/turnstile")),
-    ).toThrow("Kagi requires additional browser verification");
+  test("returns clear error for successful challenge response", () => {
+    const challengeUrl = checkNotAuthOrChallengeResponse(responseWithUrl("https://kagi.com/turnstile"));
+    expect(challengeUrl.isErr()).toBe(true);
+    expect(challengeUrl._unsafeUnwrapErr()).toMatchObject({
+      type: "KagiChallengeError",
+      message: expect.stringContaining("Kagi requires additional browser verification"),
+    });
 
-    expect(() =>
-      assertNotAuthOrChallengeResponse(responseWithUrl("https://kagi.com/html/search"), "turnstile"),
-    ).toThrow("Kagi requires additional browser verification");
+    const challengeBody = checkNotAuthOrChallengeResponse(
+      responseWithUrl("https://kagi.com/html/search"),
+      "turnstile",
+    );
+    expect(challengeBody.isErr()).toBe(true);
+    expect(challengeBody._unsafeUnwrapErr()).toMatchObject({
+      type: "KagiChallengeError",
+      message: expect.stringContaining("Kagi requires additional browser verification"),
+    });
   });
 
   test("detects HTML documents", () => {
     expect(isHtmlDocument("<!DOCTYPE html><html></html>")).toBe(true);
     expect(isHtmlDocument('{"state":"done"}')).toBe(false);
+  });
+
+  test("safeFetch maps synchronous fetch throws to Err", async () => {
+    const result = await safeFetch("https://example.com", {
+      headers: { Cookie: "invalid\nheader" },
+    });
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toMatchObject({ type: "UnexpectedError" });
   });
 });

@@ -1,10 +1,14 @@
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
+import { err, errAsync, ok, ResultAsync, type Result } from "neverthrow";
+
+import type { AppError } from "../utils/errors.ts";
 import {
-  assertNotAuthOrChallengeResponse,
+  checkNotAuthOrChallengeResponse,
   checkResponseStatus,
   kagiHeaders,
-  rethrowAsNetworkError,
+  mapFetchError,
+  safeFetch,
   type RequestOptions,
 } from "./http.ts";
 
@@ -24,40 +28,45 @@ export interface SearchResponse {
 type SearchPageKind = "results" | "no-results" | "unexpected";
 
 /** Performs a Kagi web search by scraping the HTML results page and parsing structured results. */
-export async function search(
+export function search(
   query: string,
   token: string,
   limit: number = 10,
   options: RequestOptions = {},
-): Promise<SearchResponse> {
-  if (!query) {
-    throw new Error("Search query is required and must be a string");
+): ResultAsync<SearchResponse, AppError> {
+  if (typeof query !== "string" || query.trim() === "") {
+    return errAsync({
+      type: "ValidationError",
+      message: "Search query is required and must be a string",
+    });
   }
 
-  if (!token) {
-    throw new Error("Session token is required and must be a string");
+  if (typeof token !== "string" || token.trim() === "") {
+    return errAsync({
+      type: "ValidationError",
+      message: "Session token is required and must be a string",
+    });
   }
 
   if (limit < 1 || limit > MAX_SEARCH_LIMIT || !Number.isInteger(limit)) {
-    throw new Error(`Limit must be an integer between 1 and ${MAX_SEARCH_LIMIT}`);
-  }
-
-  try {
-    const response = await fetch(`https://kagi.com/html/search?q=${encodeURIComponent(query)}`, {
-      headers: kagiHeaders(token),
-      signal: options.signal,
+    return errAsync({
+      type: "ValidationError",
+      message: `Limit must be an integer between 1 and ${MAX_SEARCH_LIMIT}`,
     });
-
-    checkResponseStatus(response);
-
-    const html = await response.text();
-    assertNotAuthOrChallengeResponse(response, html);
-
-    const results = parseSearchResults(html, limit);
-    return { data: results };
-  } catch (error: unknown) {
-    rethrowAsNetworkError(error);
   }
+
+  return safeFetch(`https://kagi.com/html/search?q=${encodeURIComponent(query)}`, {
+    headers: kagiHeaders(token),
+    signal: options.signal,
+  }).andThen((response) =>
+    checkResponseStatus(response).asyncAndThen(() =>
+      ResultAsync.fromPromise(response.text(), mapFetchError).andThen((html) =>
+        checkNotAuthOrChallengeResponse(response, html)
+          .andThen(() => parseSearchResults(html, limit))
+          .map((results) => ({ data: results })),
+      ),
+    ),
+  );
 }
 
 function classifySearchPage($: cheerio.CheerioAPI): SearchPageKind {
@@ -77,16 +86,19 @@ function classifySearchPage($: cheerio.CheerioAPI): SearchPageKind {
   return "unexpected";
 }
 
-function parseSearchResults(html: string, limit: number): SearchResult[] {
+function parseSearchResults(html: string, limit: number): Result<SearchResult[], AppError> {
   const $ = cheerio.load(html);
   const pageKind = classifySearchPage($);
 
   if (pageKind === "no-results") {
-    return [];
+    return ok([]);
   }
 
   if (pageKind === "unexpected") {
-    throw new Error("Failed to parse search results - unexpected HTML structure");
+    return err({
+      type: "ParseError",
+      message: "Failed to parse search results - unexpected HTML structure",
+    });
   }
 
   const results: SearchResult[] = [];
@@ -115,9 +127,13 @@ function parseSearchResults(html: string, limit: number): SearchResult[] {
       });
     }
 
-    return results;
-  } catch (error) {
-    throw new Error("Failed to parse search results - unexpected HTML structure", { cause: error });
+    return ok(results);
+  } catch (cause) {
+    return err({
+      type: "ParseError",
+      message: "Failed to parse search results - unexpected HTML structure",
+      cause,
+    });
   }
 }
 

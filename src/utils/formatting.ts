@@ -1,10 +1,5 @@
 import type { SearchResponse } from "../kagi/search.ts";
 
-/** Type guard that checks if an error is an ErrnoException-style error (has a `code` property). */
-export function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
-}
-
 const resultTemplate = (resultNumber: number, title: string, url: string, snippet: string) =>
   `${resultNumber}: ${title}
 ${url}
@@ -44,14 +39,4 @@ export function formatSearchResults(queries: string[], responses: SearchResponse
   }
 
   return perQueryResponseStrs.join("\n\n");
-}
-
-/** Extracts a message string from an unknown error, falling back to `String()` for non-Error values. */
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/** Formats an unknown error into a user-facing "Error: ..." string. */
-export function formatError(error: unknown): string {
-  return `Error: ${errorMessage(error) || "Unknown error occurred"}`;
 }

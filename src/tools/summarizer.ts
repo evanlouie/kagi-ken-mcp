@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import {
   articleSummaryLengthSchema,
   summarize,
@@ -8,9 +10,8 @@ import {
   type SupportedLanguage,
 } from "../kagi/summarize.ts";
 import { resolveToken } from "../utils/auth.ts";
-import { formatError } from "../utils/formatting.ts";
+import { formatAppError } from "../utils/errors.ts";
 import { withTimeout } from "../utils/timeout.ts";
-import { z } from "zod";
 
 const SUMMARY_TIMEOUT_MS = 60_000;
 
@@ -33,6 +34,12 @@ export const summarizerInputSchema = {
     ),
 };
 
+function textContent(text: string) {
+  return {
+    content: [{ type: "text" as const, text }],
+  };
+}
+
 /** MCP tool handler that summarizes a URL using Kagi's summarizer with configurable type and language. */
 export async function kagiSummarizer({
   url,
@@ -45,34 +52,32 @@ export async function kagiSummarizer({
   summary_length?: ArticleSummaryLength;
   target_language?: SupportedLanguage;
 }) {
-  try {
-    const token = resolveToken();
-
-    const result = await withTimeout(
-      (signal) =>
-        summarize(
-          url,
-          token,
-          {
-            type: summary_type,
-            summaryLength: summary_length,
-            language: target_language,
-            isUrl: true,
-          },
-          { signal },
-        ),
-      SUMMARY_TIMEOUT_MS,
-      "Summarizer timeout",
-    );
-
-    return {
-      content: [{ type: "text" as const, text: result.data.output }],
-    };
-  } catch (error) {
-    return {
-      content: [{ type: "text" as const, text: formatError(error) }],
-    };
+  const tokenResult = resolveToken();
+  if (tokenResult.isErr()) {
+    return textContent(formatAppError(tokenResult.error));
   }
+
+  const result = await withTimeout(
+    (signal) =>
+      summarize(
+        url,
+        tokenResult.value,
+        {
+          type: summary_type,
+          summaryLength: summary_length,
+          language: target_language,
+          isUrl: true,
+        },
+        { signal },
+      ),
+    SUMMARY_TIMEOUT_MS,
+    "Summarizer timeout",
+  );
+
+  return result.match(
+    (summary) => textContent(summary.data.output),
+    (error) => textContent(formatAppError(error)),
+  );
 }
 
 export const summarizerToolConfig = {
