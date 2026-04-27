@@ -1,3 +1,4 @@
+import { err, ok, type Result } from "neverthrow";
 import { z } from "zod";
 
 import {
@@ -10,7 +11,7 @@ import {
   type SupportedLanguage,
 } from "../kagi/summarize.ts";
 import { resolveToken } from "../utils/auth.ts";
-import { formatAppError } from "../utils/errors.ts";
+import { formatAppError, type AppError } from "../utils/errors.ts";
 import { withTimeout } from "../utils/timeout.ts";
 
 const SUMMARY_TIMEOUT_MS = 60_000;
@@ -40,8 +41,7 @@ function textContent(text: string) {
   };
 }
 
-/** MCP tool handler that summarizes a URL using Kagi's summarizer with configurable type and language. */
-export async function kagiSummarizer({
+export async function runSummarizer({
   url,
   summary_type,
   summary_length,
@@ -51,10 +51,10 @@ export async function kagiSummarizer({
   summary_type?: SummaryType;
   summary_length?: ArticleSummaryLength;
   target_language?: SupportedLanguage;
-}) {
+}): Promise<Result<string, AppError>> {
   const tokenResult = resolveToken();
   if (tokenResult.isErr()) {
-    return textContent(formatAppError(tokenResult.error));
+    return err(tokenResult.error);
   }
 
   const result = await withTimeout(
@@ -75,9 +75,20 @@ export async function kagiSummarizer({
   );
 
   return result.match(
-    (summary) => textContent(summary.data.output),
-    (error) => textContent(formatAppError(error)),
+    (summary) => ok(summary.data.output),
+    (error) => err(error),
   );
+}
+
+/** MCP tool handler that summarizes a URL using Kagi's summarizer with configurable type and language. */
+export async function kagiSummarizer(args: {
+  url: string;
+  summary_type?: SummaryType;
+  summary_length?: ArticleSummaryLength;
+  target_language?: SupportedLanguage;
+}) {
+  const result = await runSummarizer(args);
+  return textContent(result.match((text) => text, formatAppError));
 }
 
 export const summarizerToolConfig = {

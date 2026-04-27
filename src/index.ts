@@ -1,59 +1,85 @@
 #!/usr/bin/env bun
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { ResultAsync } from "neverthrow";
-
 import pkg from "../package.json";
-import { kagiSearchFetch, searchToolConfig } from "./tools/search.ts";
-import { kagiSummarizer, summarizerToolConfig } from "./tools/summarizer.ts";
-import { formatAppError, toUnexpectedError, type AppError } from "./utils/errors.ts";
+import { commandHelp, generalHelp } from "./cli/help.ts";
+import { parseCliArgs, type CliCommand } from "./cli/parser.ts";
+import { startMcpServer } from "./mcp/server.ts";
+import { runSearch } from "./tools/search.ts";
+import { runSummarizer } from "./tools/summarizer.ts";
+import { formatAppError, formatUnknownError } from "./utils/errors.ts";
 
 const { version } = pkg;
 
-class KagiKenMcpServer {
-  private server: McpServer;
+function printStdout(text: string) {
+  process.stdout.write(`${text}\n`);
+}
 
-  constructor() {
-    this.server = new McpServer({
-      name: "kagi-ken-mcp",
-      version,
-    });
-    this.setupTools();
+function printStderr(text: string) {
+  process.stderr.write(`${text}\n`);
+}
+
+async function runCommand(command: CliCommand): Promise<number> {
+  switch (command.type) {
+    case "help":
+      printStdout(commandHelp(command.topic));
+      return command.exitCode;
+    case "version":
+      printStdout(version);
+      return 0;
+    case "search": {
+      const result = await runSearch({ queries: command.queries, limit: command.limit });
+      return result.match(
+        (text) => {
+          printStdout(text);
+          return 0;
+        },
+        (error) => {
+          printStderr(formatAppError(error));
+          return 1;
+        },
+      );
+    }
+    case "summarize": {
+      const result = await runSummarizer({
+        url: command.url,
+        summary_type: command.summary_type,
+        summary_length: command.summary_length,
+        target_language: command.target_language,
+      });
+      return result.match(
+        (text) => {
+          printStdout(text);
+          return 0;
+        },
+        (error) => {
+          printStderr(formatAppError(error));
+          return 1;
+        },
+      );
+    }
+    case "mcp": {
+      const result = await startMcpServer();
+      return result.match(
+        () => 0,
+        (error) => {
+          printStderr(`Failed to start Tobira MCP Server v${version}: ${formatAppError(error)}`);
+          return 1;
+        },
+      );
+    }
+  }
+}
+
+async function main(args: string[]): Promise<number> {
+  const commandResult = parseCliArgs(args);
+  if (commandResult.isErr()) {
+    printStderr(formatAppError(commandResult.error));
+    printStderr("");
+    printStderr(generalHelp());
+    return 2;
   }
 
-  private setupTools() {
-    this.server.registerTool(
-      searchToolConfig.name,
-      {
-        title: "Kagi Search",
-        description: searchToolConfig.description,
-        inputSchema: searchToolConfig.inputSchema,
-      },
-      (args) => kagiSearchFetch(args as Parameters<typeof kagiSearchFetch>[0]),
-    );
-
-    this.server.registerTool(
-      summarizerToolConfig.name,
-      {
-        title: "Kagi Summarizer",
-        description: summarizerToolConfig.description,
-        inputSchema: summarizerToolConfig.inputSchema,
-      },
-      (args) => kagiSummarizer(args as Parameters<typeof kagiSummarizer>[0]),
-    );
-  }
-
-  start(): ResultAsync<void, AppError> {
-    return ResultAsync.fromPromise(
-      (async () => {
-        const transport = new StdioServerTransport();
-        await this.server.connect(transport);
-        console.error(`Kagi Ken MCP Server v${version} started successfully`);
-      })(),
-      toUnexpectedError,
-    );
-  }
+  return runCommand(commandResult.value);
 }
 
 process.on("uncaughtException", (error) => {
@@ -62,16 +88,8 @@ process.on("uncaughtException", (error) => {
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error("Unhandled rejection:", reason);
+  console.error("Unhandled rejection:", formatUnknownError(reason));
   process.exit(1);
 });
 
-const server = new KagiKenMcpServer();
-const startResult = await server.start();
-if (startResult.isErr()) {
-  console.error(
-    `Failed to start Kagi Ken MCP Server v${version}:`,
-    formatAppError(startResult.error),
-  );
-  process.exit(1);
-}
+process.exitCode = await main(process.argv.slice(2));

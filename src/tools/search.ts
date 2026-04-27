@@ -53,22 +53,21 @@ function normalizeQueries(queries: string[]): Result<string[], AppError> {
   return ok(normalizedQueries);
 }
 
-/** MCP tool handler that runs concurrent Kagi searches with per-query timeouts and returns formatted results. */
-export async function kagiSearchFetch({
+export async function runSearch({
   queries,
   limit = 10,
 }: {
   queries: string[];
   limit?: number;
-}) {
+}): Promise<Result<string, AppError>> {
   const tokenResult = resolveToken();
   if (tokenResult.isErr()) {
-    return textContent(formatAppError(tokenResult.error));
+    return err(tokenResult.error);
   }
 
   const normalizedQueriesResult = normalizeQueries(queries);
   if (normalizedQueriesResult.isErr()) {
-    return textContent(formatAppError(normalizedQueriesResult.error));
+    return err(normalizedQueriesResult.error);
   }
 
   const token = tokenResult.value;
@@ -103,7 +102,13 @@ export async function kagiSearchFetch({
     finalResponse += "\n\nErrors encountered:\n" + errors.join("\n");
   }
 
-  return textContent(finalResponse);
+  return ok(finalResponse);
+}
+
+/** MCP tool handler that runs concurrent Kagi searches with per-query timeouts and returns formatted results. */
+export async function kagiSearchFetch(args: { queries: string[]; limit?: number }) {
+  const result = await runSearch(args);
+  return textContent(result.match((text) => text, formatAppError));
 }
 
 export const searchToolConfig = {

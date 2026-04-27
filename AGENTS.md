@@ -7,29 +7,34 @@ This file provides guidance to LLM agents when working with code in this reposit
 ### Development
 
 ```bash
-bun install         # Install dependencies
-bun start           # Run the MCP server
-bun run dev         # Run with Bun inspector for debugging
+bun install        # Install dependencies
+bun run start      # Show CLI help
+bun run dev        # Show CLI help with Bun inspector
+bun run typecheck  # Type-check with tsgo
+bun run lint       # Lint with oxlint
+bun run fmt        # Format with oxfmt
 ```
 
 ### Testing & Debugging
 
 ```bash
-bunx @modelcontextprotocol/inspector bun src/index.ts    # Launch MCP Inspector at localhost:5173
+bun test                                                  # Run unit tests; live integrations skip by default
+bun run test:integration                                  # Run live Kagi integration tests with KAGI_INTEGRATION=1
+bunx @modelcontextprotocol/inspector bun src/index.ts mcp # Launch MCP Inspector at localhost:5173
 ```
 
 ## Architecture Overview
 
-This is a **Model Context Protocol (MCP) server** that provides Kagi search and summarization tools to Claude Desktop/Code. The server acts as a bridge between Claude and the `kagi-ken` package for accessing Kagi's APIs.
+This is a **CLI-first Kagi session-token client** with an optional Model Context Protocol (MCP) server mode. The CLI exposes direct search/summarize commands and can start an MCP stdio server for Claude Desktop/Code. It uses session tokens (not API keys) with an inlined Kagi client under `src/kagi/`. Use Bun as the runtime.
 
 ### Core Architecture Pattern
 
-**MCP Server Structure**: The main server (`src/index.ts`) uses the `@modelcontextprotocol/sdk` to create an MCP server that registers tools and handles communication via stdio transport.
+**CLI Structure**: The main entry point (`src/index.ts`) parses CLI commands. The `mcp` command starts the MCP server from `src/mcp/server.ts`, which uses the `@modelcontextprotocol/sdk` and stdio transport.
 
-**Tool-Based Architecture**: Each capability is implemented as a separate MCP tool:
+**Tool-Based Architecture**: Each capability has a shared plain-text runner plus an MCP wrapper:
 
-- `kagi_search_fetch` - Multi-query concurrent search
-- `kagi_summarizer` - URL/content summarization
+- `runSearch` / `kagi_search_fetch` - Multi-query concurrent search
+- `runSummarizer` / `kagi_summarizer` - URL summarization
 
 **Token Resolution System**: Authentication follows the same pattern as `kagi-ken-cli` with priority-based token resolution:
 
@@ -38,17 +43,23 @@ This is a **Model Context Protocol (MCP) server** that provides Kagi search and 
 
 ### Key Components
 
-**`src/index.ts`** - Main server class that:
+**`src/index.ts`** - CLI entry point that:
 
-- Creates McpServer instance
-- Registers tools with Zod schemas for input validation
-- Sets up stdio transport and error handling
+- Parses `search`, `summarize`, and `mcp` commands
+- Dispatches to shared tool runners
+- Prints CLI output/errors and sets exit codes
 
-**`src/tools/`** - Tool implementations:
+**`src/tools/`** - Shared tool implementations:
 
-- Each tool exports both the handler function and config object
-- Handlers return MCP-compliant response format with `content` array
-- Input validation uses direct Zod schema objects (not `z.object()`)
+- Each tool exports a plain-text runner for the CLI, an MCP handler wrapper, and a config object
+- MCP handlers return MCP-compliant response format with `content` array
+- Input validation uses direct Zod schema objects (not `z.object()`) for MCP input schemas
+
+**`src/kagi/`** - Inlined Kagi HTTP client:
+
+- `http.ts` - Request handling, response validation, auth/challenge detection
+- `search.ts` - Search client and HTML parser
+- `summarize.ts` - Summarizer client and streaming response parser
 
 **`src/utils/auth.ts`** - Token resolution that mirrors `kagi-ken-cli`:
 
@@ -59,7 +70,7 @@ This is a **Model Context Protocol (MCP) server** that provides Kagi search and 
 **`src/utils/formatting.ts`** - Result formatting:
 
 - `formatSearchResults()` - Matches official Kagi MCP output format
-- `getEnvironmentConfig()` - Unified config with token resolution
+- Results with `t === 1` (related searches) are filtered out; only `t === 0` (actual results) are included
 
 ### Critical Implementation Details
 
@@ -77,16 +88,19 @@ export const schema = z.object({
 });
 ```
 
-**Concurrent Search Processing**: Search tool uses `Promise.allSettled()` with individual timeouts to handle multiple queries concurrently, maintaining result order and partial success handling.
+**Concurrent Search Processing**: Search tool runs multiple queries concurrently with individual timeouts, maintaining result order and partial success handling.
 
 **Result Formatting Compatibility**: Output format precisely matches the official Python Kagi MCP server to ensure tool interface compatibility across implementations.
 
 ## Dependencies
 
+- Use Bun as the runtime
+- ES modules (`"type": "module"` in `package.json`)
 - `@modelcontextprotocol/sdk` - MCP server implementation
-- `kagi-ken` - Kagi API client (GitHub dependency)
+- `cheerio` - Kagi search HTML parsing
+- `neverthrow` - Typed result/error flow
 - `zod` - Input validation schemas
 
 ## Configuration
 
-Requires Kagi session token via environment variable or file. Server automatically detects token source and provides clear error messages for setup issues.
+Requires Kagi session token via environment variable or file. The CLI and MCP mode automatically detect the token source and provide clear error messages for setup issues.

@@ -1,38 +1,39 @@
-# kagi-ken-mcp
+# tobira
 
-A lightweight Bun MCP server with an inlined Kagi session-token client, providing access to Kagi.com services using Kagi session tokens:
+A lightweight Bun CLI with an inlined Kagi session-token client. It provides direct terminal commands for Kagi Search and Kagi Summarizer, plus an optional command for starting the same MCP server tools for Claude and other MCP clients.
 
-- **Search**: Searches Kagi
-- **Summarizer**: Uses Kagi's Summarizer to create summaries from URLs or text content
+- **Search**: Fetch web results from Kagi Search
+- **Summarize**: Summarize URLs with Kagi Summarizer
+- **MCP mode**: Start an MCP stdio server exposing the search and summarizer tools
 
-Unlike the official Kagi API which requires API access, this MCP server uses your existing Kagi session to access both search and summarization features.
+Unlike the official Kagi API, which requires separate API access, this project uses your existing Kagi session token.
 
-_"Kagi-ken"_ is a portmanteau of _"Kagi"_ (the service) and _"token"_.
+_"Tobira"_ means _"door"_ in Japanese: a small doorway from your terminal or MCP client into Kagi search and summarization.
 
 ## Why?
 
-The [Kagi API](https://help.kagi.com/kagi/api/overview.html) requires a separate API key, which are invite-only at the moment. If you already have a Kagi subscription but no API access, yet want to programmatically access Kagi's services from LLMs or agents like Claude, this MCP server provides an alternative.
+The [Kagi API](https://help.kagi.com/kagi/api/overview.html) requires a separate API key, which is invite-only at the moment. If you already have a Kagi subscription but no API access, this CLI provides an alternative way to use Kagi's search and summarization features from your terminal, scripts, or MCP-compatible agents.
 
 ## Features
 
-- **Search**: Fetch web results using Kagi Search with concurrent query processing
-- **Summarization**: Summarize content from URLs with customizable output types and languages
+- **CLI-first interface** with one executable: `tobira`
+- **Search command** with concurrent multi-query processing
+- **Summarize command** with configurable summary type, length, and language
+- **MCP server command** for Claude Desktop, Claude Code, and other MCP clients
+- **Session-token auth** via environment variable or token file
+- **Abortable timeouts**: 10 seconds per search query, 60 seconds per summarization
+- **Input validation** and explicit invalid-token/browser-verification detection
 
-The server supports two methods for using your Kagi session token (see [Installation](#installation)), in this order:
+The CLI supports two methods for using your Kagi session token, in this order:
 
 1. `KAGI_SESSION_TOKEN` environment variable
 2. `~/.kagi_session_token` file containing the token string
 
-It includes comprehensive error handling:
+> [!WARNING]
+> **Security Note**: Keep your session token private. It provides access to your Kagi account.
 
-- Abortable timeouts (10 seconds per search query, 60 seconds per summarization)
-- Invalid input validation
-- Environment variable validation
-- Explicit invalid-token and browser-verification detection
-- Graceful error formatting
-
-<a href="https://glama.ai/mcp/servers/@evanlouie/kagi-ken-mcp">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@evanlouie/kagi-ken-mcp/badge" alt="kagi-kan-mcp MCP server" />
+<a href="https://glama.ai/mcp/servers/@evanlouie/tobira">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@evanlouie/tobira/badge" alt="tobira MCP server" />
 </a>
 
 ## Installation
@@ -44,38 +45,142 @@ Bun is required.
 1. Visit [Kagi Settings](https://kagi.com/settings/user_details) in your browser
 2. Copy the **Session Link**
 3. Extract the `token` value from the link
-4. Use that value as your session token: save to `~/.kagi_session_token` (recommended), alternatively pass as `KAGI_SESSION_TOKEN` env variable
+4. Save that value to `~/.kagi_session_token` or pass it as `KAGI_SESSION_TOKEN`
 
-The server will automatically try the environment variable first, then fall back to the token file.
+Recommended token file setup:
 
-> [!WARNING]
-> **Security Note**: Keep your session token private. It provides access to your Kagi account.
+```bash
+printf '%s' 'YOUR_SESSION_TOKEN_HERE' > ~/.kagi_session_token
+chmod 600 ~/.kagi_session_token
+```
 
-### 2.a. Add MCP server to Claude Desktop
+### 2. Run the CLI
 
-Add kagi-ken-mcp to your `claude_desktop_config.json` which you can open from the Claude Desktop app via Settings → Developer → Local MCP Servers → Edit Config.
+From GitHub with `bunx`:
 
-#### Option 1: Using token file (recommended)
+```bash
+bunx github:evanlouie/tobira --help
+```
+
+From a local clone:
+
+```bash
+git clone <repository-url>
+cd tobira
+bun install
+bun src/index.ts --help
+```
+
+When installed as a package, the executable is:
+
+```bash
+tobira
+```
+
+## CLI Usage
+
+```bash
+tobira <command> [options]
+```
+
+Commands:
+
+```text
+search <query...>       Search Kagi. Accepts one or more queries.
+summarize <url>         Summarize a URL using Kagi Summarizer.
+mcp                     Start the MCP stdio server.
+```
+
+Global options:
+
+```text
+-h, --help              Show help.
+-v, --version           Show version.
+```
+
+### Search
+
+```bash
+tobira search <query...> [--limit <number>]
+```
+
+Examples:
+
+```bash
+tobira search "time person of the year 2024"
+tobira search "bun cli parser" "kagi search examples" --limit 5
+```
+
+Options:
+
+- `--limit <number>`: Maximum number of search results per query. Default: `10`, max: `50`.
+
+Notes:
+
+- Accepts one to ten queries.
+- Each positional argument is treated as one complete query.
+- Results are numbered continuously across all queries.
+
+### Summarize
+
+```bash
+tobira summarize <url> [--type <type>] [--length <length>] [--language <code>]
+```
+
+Examples:
+
+```bash
+tobira summarize https://example.com/article
+tobira summarize https://example.com/article --type keypoints --language EN
+tobira summarize https://example.com/article --type article --length digest --language EN
+```
+
+Options:
+
+- `--type <type>`: `article`, `keypoints`, or `eli5`. Default: `article`.
+- `--summary-type <type>`: Alias for `--type`.
+- `--length <length>`: `headline`, `overview`, `digest`, `medium`, or `long`. Only supported for article summaries.
+- `--language <code>`: Target language code, e.g. `EN`, `DE`, `FR`.
+- `--target-language <code>`: Alias for `--language`.
+
+### MCP Server Mode
+
+The same executable can start the MCP stdio server:
+
+```bash
+tobira mcp
+```
+
+MCP mode exposes the same tool names as before:
+
+- `kagi_search_fetch`
+- `kagi_summarizer`
+
+#### Claude Desktop
+
+Add this to `claude_desktop_config.json`, which you can open from Claude Desktop via Settings → Developer → Local MCP Servers → Edit Config.
+
+Using token file:
 
 ```json
 {
   "mcpServers": {
-    "kagi-ken-mcp": {
+    "tobira": {
       "command": "bunx",
-      "args": ["github:evanlouie/kagi-ken-mcp"]
+      "args": ["github:evanlouie/tobira", "mcp"]
     }
   }
 }
 ```
 
-#### Option 2: Using environment variable
+Using environment variable:
 
 ```json
 {
   "mcpServers": {
-    "kagi-ken-mcp": {
+    "tobira": {
       "command": "bunx",
-      "args": ["github:evanlouie/kagi-ken-mcp"],
+      "args": ["github:evanlouie/tobira", "mcp"],
       "env": {
         "KAGI_SESSION_TOKEN": "YOUR_SESSION_TOKEN_HERE"
       }
@@ -84,53 +189,58 @@ Add kagi-ken-mcp to your `claude_desktop_config.json` which you can open from th
 }
 ```
 
-#### Post-install
+If installed globally, use:
 
-[Disable Claude Desktop's built-in websearch](assets/claude-desktop-disable-websearch.png) so it'll use this here MCP server. And maybe add this to your "Personal preferences" (i.e., system prompt) in Settings:
-
+```json
+{
+  "mcpServers": {
+    "tobira": {
+      "command": "tobira",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
-For web searches, use kagi-ken-mcp MCP server's `kagi_search_fetch` tool.
-For summarizing a URL, use the kagi-ken-mcp MCP server's `kagi_summarizer` tool.
+
+[Disable Claude Desktop's built-in websearch](assets/claude-desktop-disable-websearch.png) so it uses this MCP server. You may also add this to your personal preferences/system prompt:
+
+```text
+For web searches, use the tobira MCP server's `kagi_search_fetch` tool.
+For summarizing a URL, use the tobira MCP server's `kagi_summarizer` tool.
 ```
 
-### 2.b. Add MCP server to Claude Code
+#### Claude Code
 
-#### Option 1: Using token file (recommended)
+Using token file:
 
 ```bash
-claude mcp add kagi-ken-mcp --scope user -- bunx github:evanlouie/kagi-ken-mcp
+claude mcp add tobira --scope user -- bunx github:evanlouie/tobira mcp
 ```
 
-#### Option 2: Using environment variable
+Using environment variable:
 
 ```bash
-claude mcp add kagi-ken-mcp \
+claude mcp add tobira \
   --scope user \
   --env KAGI_SESSION_TOKEN="YOUR_SESSION_TOKEN_HERE" -- \
-  bunx github:evanlouie/kagi-ken-mcp
+  bunx github:evanlouie/tobira mcp
 ```
 
-#### Post-install
-
-Disable Claude Code's built-in web search (optional) by setting the permission in the relevant `.claude/settings*.json` file:
+Optional Claude Code permission settings:
 
 ```json
 {
   "permissions": {
     "deny": ["WebSearch"],
     "allow": [
-      "mcp__kagi-ken-mcp__kagi_search_fetch",
-      "mcp__kagi-ken-mcp__kagi_summarizer"
+      "mcp__tobira__kagi_search_fetch",
+      "mcp__tobira__kagi_summarizer"
     ]
   }
 }
 ```
 
-## Usage: Pose query that requires use of a tool
-
-e.g. _"Who was time's 2024 person of the year?"_ for search, or "summarize this video: https://www.youtube.com/watch?v=sczwaYyaevY" for summarizer.
-
-## Tools
+## MCP Tools
 
 ### `kagi_search_fetch`
 
@@ -139,7 +249,7 @@ Fetch web results based on one or more queries using Kagi Search. Results are nu
 **Parameters:**
 
 - `queries` (array of strings): One to ten non-empty search queries
-- `limit` (number, optional): Maximum number of results per query (default: 10, max: 50)
+- `limit` (number, optional): Maximum number of results per query. Default: `10`, max: `50`
 
 ### `kagi_summarizer`
 
@@ -148,25 +258,30 @@ Summarize content from URLs using the Kagi Summarizer API. Supports various docu
 **Parameters:**
 
 - `url` (string): URL to summarize
-- `summary_type` (enum): `"keypoints"` for concise bullets, `"eli5"` for a simplified explanation, or `"article"` for a prose summary (default: `"article"`)
+- `summary_type` (enum): `"keypoints"`, `"eli5"`, or `"article"`. Default: `"article"`
 - `summary_length` (enum, optional): Only used with `"article"`; one of `"headline"`, `"overview"`, `"digest"`, `"medium"`, or `"long"`
-- `target_language` (string, optional): Language code (e.g., `"EN"` for English, default: `"EN"`)
+- `target_language` (string, optional): Language code, e.g. `"EN"`
 
 ## Development
 
 ### Project Structure
 
-```
-kagi-ken-mcp/
+```text
+tobira/
 ├── src/
-│   ├── index.ts              # Main server entry point
+│   ├── index.ts              # CLI entry point
+│   ├── cli/
+│   │   ├── help.ts           # CLI help text
+│   │   └── parser.ts         # CLI argument parser
+│   ├── mcp/
+│   │   └── server.ts         # MCP server startup
 │   ├── kagi/
 │   │   ├── http.ts           # Kagi HTTP helpers and response validation
 │   │   ├── search.ts         # Inlined Kagi search client/parser
 │   │   └── summarize.ts      # Inlined Kagi summarizer client/parser
 │   ├── tools/
-│   │   ├── search.ts         # Search tool implementation
-│   │   └── summarizer.ts     # Summarizer tool implementation
+│   │   ├── search.ts         # Shared search runner and MCP wrapper
+│   │   └── summarizer.ts     # Shared summarizer runner and MCP wrapper
 │   └── utils/
 │       ├── auth.ts           # Session token resolution
 │       ├── formatting.ts     # Output/error formatting helpers
@@ -175,24 +290,21 @@ kagi-ken-mcp/
 └── README.md
 ```
 
-### Installation
-
-1. **Clone the repository:**
-
-   ```bash
-   git clone <repository-url>
-   cd kagi-ken-mcp
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   bun install
-   ```
-
-### Running in Development Mode
+### Local Setup
 
 ```bash
-bun run dev
+git clone <repository-url>
+cd tobira
+bun install
+```
+
+### Run Locally
+
+```bash
+bun src/index.ts --help
+bun src/index.ts search "site:bun.sh Bun runtime" --limit 3
+bun src/index.ts summarize https://example.com --type keypoints
+bun src/index.ts mcp
 ```
 
 ### Testing
@@ -200,25 +312,19 @@ bun run dev
 ```bash
 bun test                 # Unit tests; live integration tests are skipped by default
 bun run test:integration # Opt into live Kagi integration tests
+bun run typecheck
+bun run lint
 ```
 
-### Debugging
+### Debugging MCP Mode
 
-Use the MCP Inspector to debug:
+Use the MCP Inspector to debug the MCP subcommand:
 
 ```bash
-bunx @modelcontextprotocol/inspector bun ./src/index.ts
+bunx @modelcontextprotocol/inspector bun ./src/index.ts mcp
 ```
 
 Then access the inspector at `http://localhost:5173`. If using environment variables, add your `KAGI_SESSION_TOKEN` in the environment variables section of the inspector.
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test with the MCP Inspector
-5. Submit a pull request
 
 ## Author
 
